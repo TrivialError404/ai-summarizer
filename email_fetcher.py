@@ -572,12 +572,12 @@ def fetch_emails(
             )
 
         # Search emails in folder
-        status, data = imap.search(None, criterion)
+        status, message_numbers = imap.search(None, criterion)
         if status != "OK":
             logger.warning("Email search failed.")
             return []
 
-        all_ids = data[0].split()[::-1] # reverse (last email first)
+        all_ids = message_numbers[0].split()[::-1] # reverse (last email first)
         if max_emails:
             all_ids = all_ids[0:max_emails]
         logger.info(f"Found {len(all_ids)} email(s) matching '{criterion}'.")
