@@ -9,9 +9,9 @@ def summarize_emails():
     from email_fetcher import save_emails
 
     from_file = False
-    file = "temp/emails.json"
-
+    
     # Get emails
+    file = "temp/emails.json"
     if from_file:
         with open(file, "r", encoding="utf-8") as f:
             emails = json.load(f)

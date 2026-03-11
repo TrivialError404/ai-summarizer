@@ -74,6 +74,33 @@ def is_model_available(model: str, host: str = DEFAULT_HOST) -> bool:
         return False
 
 
+def pull_model(model: str, host: str = DEFAULT_HOST) -> None:
+    """
+    Pulls a model from the Ollama registry if not available locally.
+
+    Args:
+        model: Model name (e.g. 'llama3.2', 'mistral').
+        host:  Ollama base URL.
+    """
+    logger.info(f"Pulling model '{model}' – this may take a few minutes...")
+    response = requests.post(
+        f"{host}/api/pull",
+        json={"name": model},
+        stream=True,
+        timeout=600
+    )
+    response.raise_for_status()
+    for line in response.iter_lines():
+        if line:
+            data = json.loads(line)
+            status = data.get("status", "")
+            if status == "success":
+                logger.info(f"Model '{model}' pulled successfully.")
+            elif status:
+                print(".", end="", flush=True)  # ← ein Punkt pro chunk
+    print()
+
+
 # ──────────────────────────────────────────────
 # Core query
 # ──────────────────────────────────────────────
@@ -114,7 +141,7 @@ def query_ollama(
     model: str = DEFAULT_MODEL,
     host: str = DEFAULT_HOST,
     temperature: float = 0.3,
-    stream: bool = False,
+    stream: bool = True,
     timeout: int = 240,
 ) -> str:
     """
@@ -137,11 +164,8 @@ def query_ollama(
         RuntimeError:    If the Ollama API returns an error.
     """
     if not is_model_available(model, host):
-        raise ValueError(
-            f"Model '{model}' not available locally. "
-            f"Run: ollama pull {model}\n"
-            f"Available: {list_local_models(host)}"
-        )
+        logger.info(f"Model '{model}' not found locally – pulling ...")
+        pull_model(model, host)
 
     payload = {
         "model":   model,
