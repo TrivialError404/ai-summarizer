@@ -34,10 +34,10 @@ def summarize_emails():
         email["content"] = llm_prompt
 
         # Summarize email content with a llm from ollama
-        llm_promt = "Fasse nachfolgende Email in 1 bis 3 kurzen Sätzen kurz und pregnant zusammen. Starte sofort mit der Zusammenfassung und sage nicht, dass du eine Zusammenfassung schreibst. Hier kommt jetzt die Email, die du zusammenfassen sollst:"
+        llm_promt = "Fasse nachfolgende Email in 1 bis 3 kurzen Sätzen kurz und pregnant zusammen.:"
         llm_promt = llm_promt + "\n\n" + content
-        llm_response = query_ollama(llm_prompt)
-        print(llm_response, "\n")
+        llm_response = query_ollama(llm_prompt, collect_metrics=True)
+        print(llm_response["content"], "\n")
         email["llm_response"] = llm_response
 
         # Save to file
