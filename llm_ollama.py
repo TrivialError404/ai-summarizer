@@ -155,7 +155,7 @@ def _query_blocking(host: str, payload: dict, timeout: int, collect_metrics: boo
         collect_metrics:  Whether to collect and return performance metrics.
 
     Returns:
-        Dict with 'content' and optionally token/latency/system metrics.
+        Dict with 'response' and optionally token/latency/system metrics.
     """
     t_request_start = time.perf_counter()
     response = requests.post(f"{host}/api/generate", json=payload, timeout=timeout)
@@ -166,8 +166,8 @@ def _query_blocking(host: str, payload: dict, timeout: int, collect_metrics: boo
     if "error" in data:
         raise RuntimeError(f"Ollama error: {data['error']}")
 
-    content = data.get("response", "").strip()
-    result  = {"content": content}
+    response = data.get("response", "").strip()
+    result  = {"response": response}
 
     if collect_metrics:
         request_time   = t_request_end - t_request_start
@@ -214,7 +214,7 @@ def _query_streaming(host: str, payload: dict, timeout: int, collect_metrics: bo
         collect_metrics:  Whether to collect and return performance metrics.
 
     Returns:
-        Dict with 'content' and optionally token/latency/system metrics.
+        Dict with 'response' and optionally token/latency/system metrics.
     """
     tokens            = []
     t_request_start   = time.perf_counter()
@@ -245,8 +245,8 @@ def _query_streaming(host: str, payload: dict, timeout: int, collect_metrics: bo
                 break
 
     t_request_end = time.perf_counter()
-    content = "".join(tokens).strip()
-    result  = {"content": content}
+    response = "".join(tokens).strip()
+    result  = {"response": response}
 
     if collect_metrics:
         request_time   = t_request_end - t_request_start
@@ -304,7 +304,7 @@ def query_ollama(
 
     Returns:
         Dict with:
-            - 'content' (str): The model's response text.
+            - 'response' (str): The model's response text.
             - 'metrics' (dict, optional): Performance data, only if collect_metrics=True.
               - 'token':   input_tokens, output_tokens, total_tokens
               - 'latency': request_time, time_to_first_token, time_per_token, tokens_per_second
@@ -317,7 +317,7 @@ def query_ollama(
 
     Example:
         >>> result = query_ollama("Hello!", collect_metrics=True)
-        >>> print(result["content"])
+        >>> print(result["response"])
         >>> print(result["metrics"]["token"]["total_tokens"])
     """
     if not is_model_available(model, host):
@@ -357,6 +357,6 @@ if __name__ == "__main__":
     )
 
     print("\n--- Result ---")
-    print("Content:", result["content"])
+    print("response:", result["response"])
     if "metrics" in result:
         print("Metrics:", json.dumps(result["metrics"], indent=2))

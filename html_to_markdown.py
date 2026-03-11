@@ -114,6 +114,9 @@ def _postprocess_markdown(md: str) -> str:
     md = re.sub(r"&[a-zA-Z]+;", " ", md)
     md = re.sub(r"&#\d+;",       " ", md)
 
+    # Remove quoted reply blocks starting with "Von:" or "From:" followed by an email address
+    md = re.sub(r"\n+(?:\*\*)?(?:Von|From):(?:\*\*)?.*?[\w.+-]+@[\w.-]+.*$[\s\S]*", "", md, flags=re.MULTILINE)
+
     return md.strip()
 
 
