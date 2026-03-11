@@ -304,7 +304,7 @@ def _parse_message(uid: str, raw: bytes) -> dict:
         "From":       _decode_header(msg.get("From", "")),
         "To":         _decode_header(msg.get("To", "")),
         "Subject":    _decode_header(msg.get("Subject", "")),
-        "Date":       date,
+        "Date":       date.isoformat(),
         "text/plain": _extract_body(msg, "text/plain"),
         "text/html":  _extract_body(msg, "text/html"),
     }
@@ -614,7 +614,7 @@ def fetch_emails(
 # ──────────────────────────────────────────────
 
 
-def get_emails_default(folder: str = "INBOX"):
+def get_emails_default(folder: str = "INBOX", unread: bool = True, max_emails: Optional[int] = None):
     """
     Minimal email IMAP call with default params to fetch unread emails from given folder
 
@@ -633,8 +633,8 @@ def get_emails_default(folder: str = "INBOX"):
         username=USER,
         password=PASSWORD,
         folder=folder,
-        unread=True,
-        max_emails=None,
+        unread=unread,
+        max_emails=max_emails,
     )
 
     return emails
