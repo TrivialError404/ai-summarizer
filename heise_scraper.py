@@ -110,7 +110,7 @@ class Article:
     markdown:    str            = ""    # converted article text for LLM input
 
     # Stage 4
-    summary:     str            = ""    # LLM-generated summary
+    llm_response:     str            = ""    # LLM-generated summary
     llm_metrics: dict           = field(default_factory=dict)  # tokens, duration, model, …
 
 
@@ -119,7 +119,6 @@ class Article:
 # ──────────────────────────────────────────────
 
 def fetch_article_links(
-    archive_url: str = HEISE_ARCHIVE_URL,
     max_articles: Optional[int] = None,
     request_delay: float = 0.5,
 ) -> list[Article]:
@@ -186,7 +185,6 @@ def fetch_article_links(
 
 
 def fetch_article_links_archive(
-    archive_url: str = HEISE_ARCHIVE_URL,
     max_articles: Optional[int] = None,
     request_delay: float = 0.5,
 ) -> list[Article]:
@@ -203,8 +201,6 @@ def fetch_article_links_archive(
     which avoids URL-suffix ambiguity (.html / .html.teaser / .teaser).
 
     Args:
-        archive_url:    URL of the archive page to scrape. Defaults to
-                        HEISE_ARCHIVE_URL.
         max_articles:   Maximum number of links to return. None = all found.
         request_delay:  Seconds to wait after the request (politeness).
 
@@ -217,8 +213,8 @@ def fetch_article_links_archive(
         requests.HTTPError: If the server returns a non-2xx status.
         requests.Timeout:   If the request times out.
     """
-    logger.info(f"Fetching article links from archive page: {archive_url}")
-    response = requests.get(archive_url, headers=DEFAULT_HEADERS, timeout=15)
+    logger.info(f"Fetching article links from archive page: {HEISE_ARCHIVE_URL}")
+    response = requests.get(HEISE_ARCHIVE_URL, headers=DEFAULT_HEADERS, timeout=15)
     response.raise_for_status()
     time.sleep(request_delay)
 
@@ -343,6 +339,42 @@ def _remove_clutter(content_tag: BeautifulSoup) -> None:
             tag.decompose()
 
 
+def strip_trailing_noise(markdown: str) -> str:
+    """
+    Removes everything from the first occurrence of a known noise heading
+    onwards.
+
+    Heise.de articles often end with consent widgets, price comparison boxes,
+    and author footers that survive HTML cleaning because they are hidden via
+    CSS rather than marked up with identifiable classes. Cutting at a known
+    heading is simpler and more reliable than trying to remove them in the
+    HTML stage.
+
+    Call this after html_to_markdown() has produced the markdown string:
+
+        article.markdown = strip_trailing_noise(
+            html_to_markdown(article.html, source_type="web")
+        )
+
+    Args:
+        markdown: Markdown string to clean.
+
+    Returns:
+        Markdown string with trailing noise removed, trailing whitespace
+        stripped.
+    """
+    noise_headings = [
+        "## Empfohlener redaktioneller Inhalt",
+        "## Preisvergleich",
+    ]
+    for heading in noise_headings:
+        idx = markdown.find(heading)
+        if idx != -1:
+            markdown = markdown[:idx].rstrip()
+            break  # one cut is enough – everything after is gone
+    return markdown
+
+
 def fetch_article_html(
     article: Article,
     request_delay: float = 1.0,
@@ -404,7 +436,6 @@ def fetch_article_html(
 def scrape_latest_articles(
     max_articles: int = 10,
     request_delay: float = 1.0,
-    archive_url: str = HEISE_ARCHIVE_URL,
 ) -> list[Article]:
     """
     Convenience function: fetches links and populates each article's HTML
@@ -420,7 +451,6 @@ def scrape_latest_articles(
         Articles where content extraction failed are skipped.
     """
     articles = fetch_article_links(
-        archive_url=archive_url,
         max_articles=max_articles,
         request_delay=request_delay,
     )
@@ -448,23 +478,41 @@ if __name__ == "__main__":
     from html_to_markdown import html_to_markdown
 
     # fetch all article links only
-    if False:
+    if True:
+        logger.info("Fetch all links from heise.de")
         articles = fetch_article_links()
-        with open("temp/article_links.txt", "w", encoding="utf-8") as f:
-            for article in articles:
-                f.write(f"{article.time} | {article.title} | {article.url}\n")
-
-    # fetch n latest articles and convert to markdown
-    if False:
-        articles = scrape_latest_articles(max_articles=3, request_delay=1.0)
-
-        for article in articles:
-            article.markdown = html_to_markdown(article.html, source_type="web")
-
-        with open("temp/articles.json", "w", encoding="utf-8") as f:
-            # exclude raw html from JSON output to keep file readable
+        # Save dict to json
+        with open("temp/article_links.json", "w", encoding="utf-8") as f:
             data = [
                 {k: v for k, v in asdict(a).items() if k != "html"}
                 for a in articles
             ]
             json.dump(data, f, ensure_ascii=False, indent=2)
+        # Save to txt
+        with open("temp/article_links.txt", "w", encoding="utf-8") as f:
+            for article in articles:
+                f.write(f"{article.time} | {article.title} | {article.url}\n")
+
+    # fetch n latest articles and convert to markdown
+    if True:
+        logger.info("Fetch the latest n articles and process the html to markdown")
+        articles = scrape_latest_articles(max_articles=5, request_delay=1.0)
+
+        for article in articles:
+            md = html_to_markdown(article.html, source_type="web")
+            md = strip_trailing_noise(md)
+            article.markdown = md
+
+        # Save dict to json
+        with open("temp/articles.json", "w", encoding="utf-8") as f:
+            data = [
+                {k: v for k, v in asdict(a).items() if k != "html"}
+                for a in articles
+            ]
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        # Save to txt
+        with open("temp/articles.txt", "w", encoding="utf-8") as f:
+            for article in articles:
+                f.write(f"{article.time} | {article.title} | {article.url}\n")
+                f.write(article.markdown)
+                f.write("\n" + "-"*80 + "\n\n")
