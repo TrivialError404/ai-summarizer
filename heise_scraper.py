@@ -3,9 +3,23 @@ Heise News Scraper
 ==================
 Collects article links from heise.de and extracts the main article body.
 
-Steps:
-    1. Fetch article links from the heise.de news archive.
-    2. Fetch each article page and extract the main content HTML.
+The central data structure is the Article dataclass, which is populated
+incrementally as it moves through the pipeline:
+
+    Stage 1 – fetch_article_links() / fetch_article_links_archive()
+              fills: title, url, time
+
+    Stage 2 – fetch_article_html()
+              fills: html, metadata
+
+    Stage 3 – html_to_markdown() (external, in html_to_markdown.py)
+              fills: markdown
+
+    Stage 4 – query_ollama() (external, in llm_ollama.py)
+              fills: summary, llm_metrics
+
+At any point, dataclasses.asdict(article) produces a JSON-serialisable dict
+with all fields populated so far.
 
 DEPENDENCIES:
     pip install requests beautifulsoup4 html2text
@@ -13,10 +27,10 @@ DEPENDENCIES:
 USAGE:
     from heise_scraper import fetch_article_links, fetch_article_html
 
-    links = fetch_article_links()
-    for url in links[:3]:
-        html = fetch_article_html(url)
-        print(html[:500])
+    articles = fetch_article_links()
+    for article in articles[:3]:
+        fetch_article_html(article)
+        print(article.title, article.html[:200])
 """
 
 import logging
@@ -65,22 +79,39 @@ ARTICLE_SELECTORS = [
 # ──────────────────────────────────────────────
 
 @dataclass
-class ArticleLink:
-    """Represents a single article link from the heise.de archive."""
-    title: str
-    url: str
-    time: Optional[str] = None        # e.g. "07:30", parsed from the listing page
-    date: Optional[str] = None
-    is_teaser: bool = False           # True for heise+ featured articles (a-theme--ho)
+class Article:
+    """
+    Central data structure for a heise.de article, populated incrementally
+    across pipeline stages. Convert to a plain dict at any point with
+    dataclasses.asdict(article).
 
+    Stage 1 – link collection:
+        title, url, time
 
-@dataclass
-class ArticleContent:
-    """Represents the extracted content of a heise.de article."""
-    url: str
-    title: str
-    html: str
-    metadata: dict = field(default_factory=dict)
+    Stage 2 – content fetching (fetch_article_html):
+        html, metadata
+
+    Stage 3 – markdown conversion (html_to_markdown):
+        markdown
+
+    Stage 4 – LLM summarisation (query_ollama):
+        summary, llm_metrics
+    """
+    # Stage 1
+    title:       str
+    url:         str
+    time:        Optional[str]  = None  # e.g. "07:30", from listing page or feed
+
+    # Stage 2
+    html:        str            = ""    # main article body HTML
+    metadata:    dict           = field(default_factory=dict)  # e.g. {"published": "..."}
+
+    # Stage 3
+    markdown:    str            = ""    # converted article text for LLM input
+
+    # Stage 4
+    summary:     str            = ""    # LLM-generated summary
+    llm_metrics: dict           = field(default_factory=dict)  # tokens, duration, model, …
 
 
 # ──────────────────────────────────────────────
@@ -91,7 +122,7 @@ def fetch_article_links(
     archive_url: str = HEISE_ARCHIVE_URL,
     max_articles: Optional[int] = None,
     request_delay: float = 0.5,
-) -> list[ArticleLink]:
+) -> list[Article]:
     """
     Fetches article links from the heise.de Atom RSS feed.
 
@@ -109,7 +140,8 @@ def fetch_article_links(
         request_delay:  Seconds to wait after the request (politeness).
 
     Returns:
-        List of ArticleLink objects in feed order (newest first).
+        List of Article objects in feed order (newest first), with stage 1
+        fields populated (title, url, time).
 
     Raises:
         requests.HTTPError: If the server returns a non-2xx status.
@@ -128,7 +160,7 @@ def fetch_article_links(
     time.sleep(request_delay)
 
     root = ET.fromstring(response.content)
-    links: list[ArticleLink] = []
+    articles: list[Article] = []
 
     for entry in root.findall("atom:entry", NS):
         title = entry.findtext("atom:title", "", NS).strip()
@@ -144,20 +176,20 @@ def fetch_article_links(
         published = entry.findtext("atom:published", "", NS)
         pub_time  = published[11:16] if len(published) >= 16 else None
 
-        links.append(ArticleLink(title=title, url=url, time=pub_time, is_teaser=False))
+        articles.append(Article(title=title, url=url, time=pub_time))
 
-        if max_articles and len(links) >= max_articles:
+        if max_articles and len(articles) >= max_articles:
             break
 
-    logger.info(f"Found {len(links)} article links from RSS feed.")
-    return links
+    logger.info(f"Found {len(articles)} article links from RSS feed.")
+    return articles
 
 
 def fetch_article_links_archive(
     archive_url: str = HEISE_ARCHIVE_URL,
     max_articles: Optional[int] = None,
     request_delay: float = 0.5,
-) -> list[ArticleLink]:
+) -> list[Article]:
     """
     Fetches article links by scraping the heise.de HTML archive page.
 
@@ -177,8 +209,9 @@ def fetch_article_links_archive(
         request_delay:  Seconds to wait after the request (politeness).
 
     Returns:
-        List of ArticleLink objects in page order (newest first).
-        Articles with unresolved JS placeholders are silently skipped.
+        List of Article objects in page order (newest first), with stage 1
+        fields populated (title, url, time). Articles with unresolved JS
+        placeholders are silently skipped.
 
     Raises:
         requests.HTTPError: If the server returns a non-2xx status.
@@ -190,7 +223,7 @@ def fetch_article_links_archive(
     time.sleep(request_delay)
 
     soup = BeautifulSoup(response.text, "html.parser")
-    links: list[ArticleLink] = []
+    articles: list[Article] = []
 
     seen: set[str] = set()
     for article_tag in soup.find_all("article", attrs={"data-cid": True}):
@@ -217,20 +250,18 @@ def fetch_article_links_archive(
             continue
         seen.add(canonical)
 
-        article_classes = " ".join(article_tag.get("class", []))
-        is_teaser = "a-theme--ho" in article_classes
-
         time_tag = article_tag.find(class_=re.compile(r"\ba-datetime__time\b"))
         pub_time = time_tag.get_text(strip=True) if time_tag else None
 
         title = anchor.get("title", "").strip() or anchor.get_text(strip=True)
-        links.append(ArticleLink(title=title, url=canonical, time=pub_time, is_teaser=is_teaser))
+        articles.append(Article(title=title, url=canonical, time=pub_time))
 
-        if max_articles and len(links) >= max_articles:
+        if max_articles and len(articles) >= max_articles:
             break
 
-    logger.info(f"Found {len(links)} article links from archive page.")
-    return links
+    logger.info(f"Found {len(articles)} article links from archive page.")
+    return articles
+
 
 # ──────────────────────────────────────────────
 # Step 2 – Extract main article HTML
@@ -280,16 +311,24 @@ def _remove_clutter(content_tag: BeautifulSoup) -> None:
         content_tag: BeautifulSoup Tag of the content container (mutated in-place).
     """
     # Tag names that are never article text – collect first, then remove
-    for tag in content_tag.find_all(["script", "style", "noscript", "iframe"]):
+    for tag in content_tag.find_all(["script", "style", "noscript", "iframe", "footer"]):
         tag.decompose()
 
-    # Common CSS class/id fragments that indicate non-editorial content
-    noise_patterns = [
+    # CSS class/id fragments that indicate non-editorial content.
+    # Each pattern is matched as a whole word (\b boundaries) so that
+    # e.g. "header" does not accidentally remove "article-header__title",
+    # and "nav" does not remove "navbar" used for legitimate article elements.
+    # Patterns ending in "-" are kept as prefix matches (e.g. "ad-banner").
+    _noise_parts = [
         "author", "byline", "ad-", "advertisement", "social", "share",
         "comment", "newsletter", "related", "teaser", "sidebar", "breadcrumb",
         "navigation", "nav", "footer", "header", "cookie", "paywall",
         "subscription", "leserbrief", "weiterlesen",
     ]
+    noise_re = re.compile("|".join(
+        p if p.endswith("-") else r"\b" + re.escape(p) + r"\b"
+        for p in _noise_parts
+    ))
 
     # Collect all candidates first to avoid mutating the tree during iteration.
     # Re-check tag.parent before each decompose: if a parent was already removed,
@@ -300,65 +339,62 @@ def _remove_clutter(content_tag: BeautifulSoup) -> None:
             # Already removed as child of a previously decomposed parent
             continue
         tag_id = " ".join([tag.get("id", ""), *tag.get("class", [])]).lower()
-        if any(pattern in tag_id for pattern in noise_patterns):
+        if noise_re.search(tag_id):
             tag.decompose()
 
 
 def fetch_article_html(
-    url: str,
+    article: Article,
     request_delay: float = 1.0,
     timeout: int = 15,
-) -> Optional[ArticleContent]:
+) -> bool:
     """
-    Fetches a single heise.de article and extracts its main content as HTML.
+    Fetches a heise.de article page and populates the stage 2 fields of the
+    given Article object in-place (html, metadata).
 
-    Performs the HTTP request, parses the page, and isolates the article
-    body while removing ads, author bios, and other clutter.
+    The title field is updated from the page's <h1> if it was not already set
+    or if the feed title differs from the actual article headline.
 
     Args:
-        url:            Full URL of the heise.de article.
+        article:        Article object to enrich (mutated in-place).
         request_delay:  Seconds to wait after the request (politeness).
         timeout:        HTTP request timeout in seconds.
 
     Returns:
-        ArticleContent with the main body HTML, or None if extraction fails.
+        True if content was extracted successfully, False otherwise.
 
     Raises:
         requests.HTTPError: If the server returns a non-2xx status.
         requests.Timeout:   If the request times out.
     """
-    logger.info(f"Fetching article: {url}")
-    response = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
+    logger.info(f"Fetching article: {article.url}")
+    response = requests.get(article.url, headers=DEFAULT_HEADERS, timeout=timeout)
     response.raise_for_status()
     time.sleep(request_delay)
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Extract page title
-    page_title = ""
+    # Update title from page <h1> (more precise than feed title)
     title_tag = soup.find("h1") or soup.find("title")
     if title_tag:
-        page_title = title_tag.get_text(strip=True)
+        article.title = title_tag.get_text(strip=True)
 
     content_tag = _extract_main_content(soup)
     if not content_tag:
-        logger.warning(f"Could not extract main content from: {url}")
-        return None
+        logger.warning(f"Could not extract main content from: {article.url}")
+        return False
 
     _remove_clutter(content_tag)
+    article.html = str(content_tag)
 
     # Collect basic metadata
-    metadata: dict = {}
     time_tag = soup.find("time")
     if time_tag:
-        metadata["published"] = time_tag.get("datetime", time_tag.get_text(strip=True))
+        article.metadata["published"] = time_tag.get(
+            "datetime", time_tag.get_text(strip=True)
+        )
 
-    return ArticleContent(
-        url=url,
-        title=page_title,
-        html=str(content_tag),
-        metadata=metadata,
-    )
+    return True
 
 
 # ──────────────────────────────────────────────
@@ -369,9 +405,10 @@ def scrape_latest_articles(
     max_articles: int = 10,
     request_delay: float = 1.0,
     archive_url: str = HEISE_ARCHIVE_URL,
-) -> list[ArticleContent]:
+) -> list[Article]:
     """
-    Convenience function: fetches links and scrapes each article in one call.
+    Convenience function: fetches links and populates each article's HTML
+    content in one call.
 
     Args:
         max_articles:   Maximum number of articles to scrape.
@@ -379,25 +416,26 @@ def scrape_latest_articles(
         archive_url:    Archive page to collect links from.
 
     Returns:
-        List of ArticleContent objects (failed extractions are skipped).
+        List of Article objects with stage 1 and stage 2 fields populated.
+        Articles where content extraction failed are skipped.
     """
-    links = fetch_article_links(
+    articles = fetch_article_links(
         archive_url=archive_url,
         max_articles=max_articles,
         request_delay=request_delay,
     )
 
-    articles: list[ArticleContent] = []
-    for link in links:
+    result: list[Article] = []
+    for article in articles:
         try:
-            article = fetch_article_html(link.url, request_delay=request_delay)
-            if article:
-                articles.append(article)
+            success = fetch_article_html(article, request_delay=request_delay)
+            if success:
+                result.append(article)
         except Exception as exc:
-            logger.warning(f"Skipping {link.url}: {exc}")
+            logger.warning(f"Skipping {article.url}: {exc}")
 
-    logger.info(f"Successfully scraped {len(articles)}/{len(links)} articles.")
-    return articles
+    logger.info(f"Successfully scraped {len(result)}/{len(articles)} articles.")
+    return result
 
 
 # ──────────────────────────────────────────────
@@ -406,29 +444,27 @@ def scrape_latest_articles(
 
 if __name__ == "__main__":
     import json
+    from dataclasses import asdict
     from html_to_markdown import html_to_markdown
 
-    # fetch all articles
-    if True:
-        article_links = fetch_article_links()
-        #article_links = fetch_article_links_archive()
+    # fetch all article links only
+    if False:
+        articles = fetch_article_links()
         with open("temp/article_links.txt", "w", encoding="utf-8") as f:
-            for link in article_links:
-                print(link)
-                f.write(f"{link.time} | {link.is_teaser} | {link.title} | {link.url}\n")
-        
+            for article in articles:
+                f.write(f"{article.time} | {article.title} | {article.url}\n")
 
-    # fetch n latest articles
+    # fetch n latest articles and convert to markdown
     if False:
         articles = scrape_latest_articles(max_articles=3, request_delay=1.0)
 
-        for i, article in enumerate(articles, 1):
-            md = html_to_markdown(article.html, source_type="web")
-            print(f"\n{'='*60}")
-            print(f"[{i}] {article.title}")
-            print(f"URL: {article.url}")
-            if article.metadata:
-                print(f"Meta: {json.dumps(article.metadata)}")
-            print("-" * 60)
-            print(md[:800])
-            print("...")
+        for article in articles:
+            article.markdown = html_to_markdown(article.html, source_type="web")
+
+        with open("temp/articles.json", "w", encoding="utf-8") as f:
+            # exclude raw html from JSON output to keep file readable
+            data = [
+                {k: v for k, v in asdict(a).items() if k != "html"}
+                for a in articles
+            ]
+            json.dump(data, f, ensure_ascii=False, indent=2)
