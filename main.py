@@ -4,7 +4,7 @@ import json
 
 def summarize_emails():
     from email_fetcher import get_emails_default
-    from html_to_markdown import html_to_markdown_for_llm, _postprocess_markdown
+    from html_to_markdown import html_to_markdown_for_llm, remove_reply
     from llm_ollama import query_ollama
     from email_fetcher import save_emails
 
@@ -27,16 +27,24 @@ def summarize_emails():
         if email["text/html"]:
             content = email["text/html"]
             # HTML to Markdown
-            llm_prompt = html_to_markdown_for_llm(content)
+            content = html_to_markdown_for_llm(content)
         else:
             content = email["text/plain"]
-            llm_prompt = _postprocess_markdown(content)
-        email["content"] = llm_prompt
+        content = remove_reply(content)
+        email["content"] = content
 
         # Summarize email content with a llm from ollama
-        llm_promt = "Gib mir eine kurze und minimale Zusammenfassung vom Inhalt nachfolgender Mail:"
-        email["promt"] = llm_promt + " ... [content]"
-        llm_promt = llm_promt + "\n\n" + content
+        llm_prompt = """Task: Summarize.
+
+Rules:
+- Output exactly 2 sentences in German.
+- Do NOT write a reply.
+- Do NOT address the sender.
+- Only summarize the content.
+
+Email:"""
+        email["promt"] = llm_prompt + " ... [content]"
+        llm_prompt = llm_prompt + "\n\n" + content
         llm_response = query_ollama(llm_prompt, collect_metrics=True)
         print(llm_response["response"], "\n")
         email["llm_response"] = llm_response

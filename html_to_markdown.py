@@ -114,11 +114,21 @@ def _postprocess_markdown(md: str) -> str:
     md = re.sub(r"&[a-zA-Z]+;", " ", md)
     md = re.sub(r"&#\d+;",       " ", md)
 
-    # Remove quoted reply blocks starting with "Von:" or "From:" followed by an email address
-    md = re.sub(r"\n+(?:\*\*)?(?:Von|From):(?:\*\*)?.*?[\w.+-]+@[\w.-]+.*$[\s\S]*", "", md, flags=re.MULTILINE)
-
     return md.strip()
 
+
+def remove_reply(md: str):
+    """
+    Remove quoted reply blocks starting with "Von:" or "From:" followed by an email address
+
+    Args:
+        md (str): Markdown string
+    
+    Returns:
+        Markdown string with removed reply block
+    """
+    md = re.sub(r"\n+(?:\*\*)?(?:Von|From):(?:\*\*)?.*?[\w.+-]+@[\w.-]+.*$[\s\S]*", "", md, flags=re.MULTILINE)
+    return md
 
 
 # ──────────────────────────────────────────────
@@ -195,7 +205,9 @@ def html_to_markdown(
         body_width=body_width,
     )
     raw_md = converter.handle(html)
-    return _postprocess_markdown(raw_md)
+    prossed_md = _postprocess_markdown(raw_md)
+    prossed_md = remove_reply(prossed_md)
+    return prossed_md
 
 
 def html_to_markdown_for_llm(html: str) -> str:
