@@ -65,6 +65,7 @@ DEFAULT_HEADERS = {
 # CSS selectors for the main article body on heise.de
 # Listed in priority order – first match wins.
 ARTICLE_SELECTORS = [
+    "article-content",
     "article.article-content",
     "div.article-content",
     "div[itemprop='articleBody']",
@@ -365,7 +366,6 @@ def strip_trailing_noise(markdown: str) -> str:
     """
     noise_headings = [
         "## Empfohlener redaktioneller Inhalt",
-        "## Preisvergleich",
     ]
     for heading in noise_headings:
         idx = markdown.find(heading)
