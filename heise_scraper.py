@@ -58,7 +58,7 @@ except Exception as e:
 
 HEISE_ARCHIVE_URL = "https://www.heise.de/newsticker/archiv/"
 HEISE_BASE_URL    = "https://www.heise.de"
-HEISE_RSS_URL     = "https://www.heise.de/newsticker/heise-atom.xml"
+
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -120,7 +120,8 @@ def fetch_article_links(
     """
     import re as _re
     import xml.etree.ElementTree as ET
- 
+    
+    HEISE_RSS_URL = "https://www.heise.de/newsticker/heise-atom.xml"
     NS = {
         "atom": "http://www.w3.org/2005/Atom",
         #"dc":   "http://purl.org/dc/elements/1.1/",
@@ -135,6 +136,20 @@ def fetch_article_links(
     articles: list[dict] = []
  
     for entry in root.findall("atom:entry", NS):
+        """
+         <entry>
+            <title type="html"><![CDATA[heise-Angebot: iX-Workshop KRITIS: Zusätzliche Prüfverfahrenskompetenz für § 8a BSIG]]></title>
+            <id>http://heise.de/-11194669</id>
+            <updated>2026-03-11T10:00:00+01:00</updated>
+            <published>2026-03-11T10:00:00+01:00</published>
+            <link href="https://www.heise.de/news/iX-Workshop-KRITIS-Zusaetzliche-Pruefverfahrenskompetenz-fuer-8a-BSIG-11194669.html?wt_mc=rss.red.ho.ho.atom.beitrag.beitrag"/>
+            <author>
+                <name>Ilona Krause</name>
+            </author>
+            <summary type="html"><![CDATA[Erlangen Sie spezielle Prüfverfahrenskompetenz für § 8a BSIG; inklusive Abschlussprüfung und Zertifizierung.]]></summary>
+            <content type="html"><![CDATA[<p><a href="https://www.heise.de/news/iX-Workshop-KRITIS-Zusaetzliche-Pruefverfahrenskompetenz-fuer-8a-BSIG-11194669.html?wt_mc=rss.red.ho.ho.atom.beitrag.beitrag"><img src="https://www.heise.de/scale/geometry/450/q80//imgs/18/5/0/3/7/0/1/5/KRITIS-Pruefungskompetenz-Ticker-Header-16-9-72087be63b7bf7b2.jpeg" class="webfeedsFeaturedVisual" alt="" /></a></p><p>Erlangen Sie spezielle Prüfverfahrenskompetenz für § 8a BSIG; inklusive Abschlussprüfung und Zertifizierung.</p>]]></content>
+        </entry>
+        """
         # Title
         title = entry.findtext("atom:title", "", NS).strip()
         # ID
@@ -378,11 +393,7 @@ def strip_trailing_noise(markdown: str) -> str:
     return markdown
  
  
-def fetch_article_html(
-    article: dict,
-    request_delay: float = 1.0,
-    timeout: int = 15,
-) -> bool:
+def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) -> bool:
     """
     Fetches a heise.de article page and adds stage 2 keys to the given article
     dict in-place (html, metadata).
@@ -391,7 +402,7 @@ def fetch_article_html(
     precise than the feed title.
  
     Args:
-        article:        Article dict to enrich (mutated in-place).
+        url:            URL to the article
         request_delay:  Seconds to wait after the request (politeness).
         timeout:        HTTP request timeout in seconds.
  
@@ -402,7 +413,6 @@ def fetch_article_html(
         requests.HTTPError: If the server returns a non-2xx status.
         requests.Timeout:   If the request times out.
     """
-    url = article["url"]
     logger.info(f"Fetching article: {url}")
     requester = session or requests
     response = requester.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
@@ -410,29 +420,14 @@ def fetch_article_html(
     time.sleep(request_delay)
  
     soup = BeautifulSoup(response.text, "html.parser")
- 
-    # Update title from page <h1> (more precise than feed title)
-    title_tag = soup.find("h1") or soup.find("title")
-    if title_tag:
-        article["title"] = title_tag.get_text(strip=True)
- 
+    
+    # Extract content (by class names)
     content_tag = _extract_main_content(soup, url)
     if not content_tag:
         return False
  
     _remove_clutter(content_tag)
-    article["html"] = str(content_tag)
- 
-    # Collect basic metadata
-    metadata: dict = {}
-    time_tag = soup.find("time")
-    if time_tag:
-        metadata["published"] = time_tag.get(
-            "datetime", time_tag.get_text(strip=True)
-        )
-    article["metadata"] = metadata
- 
-    return True
+    return str(content_tag)
  
  
 # ──────────────────────────────────────────────
@@ -441,7 +436,6 @@ def fetch_article_html(
  
 def scrape_latest_articles(
     max_articles: int = 10,
-    request_delay: float = 1.0,
 ) -> list[dict]:
     """
     Convenience function: fetches links and populates each article's HTML
@@ -455,16 +449,14 @@ def scrape_latest_articles(
         List of article dicts with stage 1 and stage 2 keys populated.
         Articles where content extraction failed are skipped.
     """
-    articles = fetch_article_links(
-        max_articles=max_articles,
-        request_delay=request_delay,
-    )
+    articles = fetch_article_links(max_articles=max_articles)
  
     result: list[dict] = []
     for article in articles:
         try:
-            success = fetch_article_html(article, request_delay=request_delay)
-            if success:
+            html_content = fetch_article_html(article["url"])
+            if html_content:
+                article["content_html"] = html_content
                 result.append(article)
         except Exception as exc:
             logger.warning(f"Skipping {article['url']}: {exc}")
@@ -495,31 +487,32 @@ if __name__ == "__main__":
     )
  
     # fetch all article links only
-    if True:
-        logger.info("Fetch all links from heise.de")
+    if False:
+        logger.info("Fetch all links from heise.de RSS feed")
         articles = fetch_article_links()
         with open("temp/article_links.json", "w", encoding="utf-8") as f:
             json.dump(articles, f, ensure_ascii=False, indent=2)
         with open("temp/article_links.txt", "w", encoding="utf-8") as f:
             for a in articles:
-                f.write(f"{a['time']} | {a['title']} | {a['url']}\n")
+                dt = datetime.fromisoformat(a["published"])
+                f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
  
     # fetch n latest articles and convert to markdown
-    if False:
+    if True:
         logger.info("Fetch the latest n articles and process the html to markdown")
-        articles = scrape_latest_articles(max_articles=20, request_delay=1.0)
+        articles = scrape_latest_articles(max_articles=5)
  
         for article in articles:
-            article["markdown"] = strip_trailing_noise(
-                html_to_markdown(article["html"], source_type="web")
-            )
+            content_markdown = html_to_markdown(article["content_html"], source_type="web")
+            content_markdown = strip_trailing_noise(content_markdown)
+            article["content_markdown"] = content_markdown
  
         with open("temp/articles.json", "w", encoding="utf-8") as f:
             data = [{k: v for k, v in a.items() if k != "html"} for a in articles]
             json.dump(data, f, ensure_ascii=False, indent=2)
         with open("temp/articles.txt", "w", encoding="utf-8") as f:
             for a in articles:
-                dt = datetime.fromisoformat(a['metadata']["published"])
-                f.write(f"{dt.strftime("%A %d.%m.%Y")} | {a['title']} | {a['url']}\n")
-                f.write(a["markdown"])
+                dt = datetime.fromisoformat(a["published"])
+                f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
+                f.write(a["content_markdown"])
                 f.write("\n" + "-"*80 + "\n\n")
