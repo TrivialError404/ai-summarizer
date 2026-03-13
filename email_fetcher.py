@@ -38,15 +38,12 @@ import email
 import email.header
 import email.utils
 import imaplib
-import json
 import logging
 import os
 from datetime import datetime
 from email.policy import default as email_default_policy
-from pathlib import Path
 from typing import Optional
 
-import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -463,37 +460,6 @@ def _serialize(emails: list[dict]) -> list[dict]:
     return result
 
 
-def save_emails(emails: list[dict], path: str | Path) -> Path:
-    """
-    Saves a list of email dicts to a JSON or YAML file.
-
-    Args:
-        emails: List of email dicts as returned by fetch_emails().
-        path:   Output file path (e.g. 'emails.json' or 'emails.yaml').
-        fmt:    File format – 'json' or 'yaml'.
-
-    Returns:
-        Resolved Path of the written file.
-
-    Raises:
-        ValueError: If fmt is not 'json' or 'yaml'.
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fmt = path.suffix.lower().lstrip(".")
-    data = _serialize(emails)
-    if fmt == "json":
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    elif fmt == "yaml":
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-    else:
-        raise ValueError(f"Unsupported format: {fmt!r}. Use 'json' or 'yaml'.")
-    logger.info(f"Saved {len(emails)} email(s) to {path.resolve()}")
-    return path.resolve()
-
-
 # ──────────────────────────────────────────────
 # Main fetch function
 # ──────────────────────────────────────────────
@@ -641,31 +607,36 @@ def get_emails_default(folder: str = "INBOX", unread: bool = True, max_emails: O
 
 
 if __name__ == "__main__":
+    from utils import save_json
+
     load_dotenv()
     USER     = os.environ.get("IMAP_USER")      # username: you@gmail.com
     PASSWORD = os.environ.get("IMAP_PASSWORD")  # password: App Password (not Account Password)
 
-    # List available folders for your provider:
-    #print(list_folders(USER, PASSWORD, provider="gmail"))
+    if False:
+        # List available folders for your provider:
+        print(list_folders(USER, PASSWORD, provider="gmail"))
 
-    # Check unread count:
-    #print(get_unread_count(USER, PASSWORD, provider="gmail"))
+        # Check unread count:
+        print(get_unread_count(USER, PASSWORD, provider="gmail"))
 
-    emails = fetch_emails(
-        username=USER,
-        password=PASSWORD,
-        # provider is auto-detected from the email domain
-        # override with provider="outlook" or imap_host="mail.example.com" if needed
-        folder="INBOX",
-        unread=True,
-        max_emails=50,
-    )
+    if True:
+        emails = fetch_emails(
+            username=USER,
+            password=PASSWORD,
+            # provider is auto-detected from the email domain
+            # override with provider="outlook" or imap_host="mail.example.com" if needed
+            folder="INBOX",
+            unread=True,
+            max_emails=50,
+        )
 
-    save_emails(emails, "temp/emails.json")
-
-    for e in emails:
-        print("─" * 60)
-        print(f"From:    {e['From']}")
-        print(f"Subject: {e['Subject']}")
-        print(f"Date:    {e['Date']}")
-        print(f"Preview: {e['text/plain'][:150]} ...")
+        # Save to json
+        emails = _serialize(emails)
+        save_json(emails, "temp/emails.json")
+        # Save to txt
+        with open("temp/emails.txt", "w", encoding="utf-8") as f:
+            for e in emails:
+                f.write(f"{e['From']} | {e['Subject']} | {e['Date']} |")
+                f.write(e['text/plain'])
+                f.write("\n" + "-"*80 + "\n\n")

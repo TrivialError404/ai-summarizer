@@ -193,7 +193,7 @@ def _postprocess_markdown(md: str) -> str:
     return md.strip()
 
 
-def _remove_reply(md: str) -> str:
+def _email_remove_reply(md: str) -> str:
     """
     Removes quoted reply blocks starting with "Von:" or "From:" followed
     by an email address. Used only for email source type.
@@ -308,7 +308,7 @@ def html_to_markdown(
     processed_md = _postprocess_markdown(raw_md)
 
     if source_type == "email":
-        processed_md = _remove_reply(processed_md)
+        processed_md = _email_remove_reply(processed_md)
 
     return processed_md
 

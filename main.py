@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 
 from email_fetcher import get_emails_default
-from heise_scraper import scrape_articles_by_filter, _md_remove_noise
+from heise_scraper import scrape_articles_by_filter, md_remove_noise
 from html_to_markdown import html_to_markdown_for_llm, html_to_markdown
 from llm_ollama import query_ollama
 from utils import save_json, load_json
@@ -176,7 +176,7 @@ def summarise_heise_articles(
         title = article.get("title", article.get("url", ""))
         logger.info(f"[{i}/{len(articles)}] {title[:70]}")
  
-        md = _md_remove_noise(
+        md = md_remove_noise(
             html_to_markdown(article["html"], source_type="web")
         )
  

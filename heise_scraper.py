@@ -391,9 +391,9 @@ def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) 
 
 
 # ──────────────────────────────────────────────
-# Step 3 – HTML to markdown
+# Special Markdown reomoval
 # ──────────────────────────────────────────────
-def _md_remove_noise(markdown: str) -> str:
+def md_remove_noise(markdown: str) -> str:
     """
     Removes everything from the first occurrence of a known noise heading
     onwards.
@@ -431,12 +431,6 @@ def _md_remove_noise(markdown: str) -> str:
     if cut != -1:
         markdown = markdown[:cut].rstrip()
     return markdown
-
-
-def heise_html2md(html_content):
-    content_markdown = html_to_markdown(html_content, source_type="web")
-    content_markdown = _md_remove_noise(content_markdown)
-    return content_markdown
 
  
 # ──────────────────────────────────────────────
@@ -559,7 +553,9 @@ if __name__ == "__main__":
         articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
  
         for article in articles:
-            content_markdown = heise_html2md(article["content_html"])
+            # HTML to Markdown
+            content_markdown = html_to_markdown(article["content_html"], source_type="web")
+            content_markdown = md_remove_noise(content_markdown)
             article["content_markdown"] = content_markdown
 
         # Save to json
