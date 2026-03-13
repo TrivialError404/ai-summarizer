@@ -42,7 +42,6 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
@@ -334,12 +333,16 @@ def strip_trailing_noise(markdown: str) -> str:
     noise_headings = [
         "## Empfohlener redaktioneller Inhalt",
         "### Lesen Sie auch",
+        "### E-Mail-Adresse",
     ]
-    for heading in noise_headings:
-        idx = markdown.find(heading)
-        if idx != -1:
-            markdown = markdown[:idx].rstrip()
-            break  # one cut is enough – everything after is gone
+    # Find the earliest occurrence across all patterns and cut there.
+    # This handles cases where multiple noise headings appear in one article.
+    cut = min(
+        (markdown.find(h) for h in noise_headings if markdown.find(h) != -1),
+        default=-1,
+    )
+    if cut != -1:
+        markdown = markdown[:cut].rstrip()
     return markdown
  
  
@@ -449,6 +452,15 @@ if __name__ == "__main__":
     import locale
     # German weekday names
     locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.FileHandler("debug.log"),
+            logging.StreamHandler()
+        ],
+    )
  
     # fetch all article links only
     if False:
