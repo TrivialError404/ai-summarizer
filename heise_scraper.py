@@ -36,7 +36,7 @@ USAGE:
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Optional
 
 import requests
@@ -270,7 +270,7 @@ def fetch_article_links_archive(
 # Step 2 – Extract main article HTML
 # ──────────────────────────────────────────────
  
-def _extract_main_content(soup: BeautifulSoup, url: str) -> Optional[BeautifulSoup]:
+def _html_extract_main_content(soup: BeautifulSoup, url: str) -> Optional[BeautifulSoup]:
     """
     Locates the main article body element within a heise.de page.
  
@@ -305,7 +305,7 @@ def _extract_main_content(soup: BeautifulSoup, url: str) -> Optional[BeautifulSo
     return None
  
  
-def _remove_clutter(content_tag: BeautifulSoup) -> None:
+def _html_remove_clutter(content_tag: BeautifulSoup) -> None:
     """
     Removes non-editorial elements from an extracted content tag in-place.
  
@@ -351,9 +351,49 @@ def _remove_clutter(content_tag: BeautifulSoup) -> None:
         tag_id = " ".join([tag.get("id", ""), *tag.get("class", [])]).lower()
         if noise_re.search(tag_id):
             tag.decompose()
+
+
+def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) -> bool:
+    """
+    Fetches a heise.de article page and adds stage 2 keys to the given article
+    dict in-place (html, metadata).
  
+    The title key is updated from the page's <h1> if present, as it is more
+    precise than the feed title.
  
-def strip_trailing_noise(markdown: str) -> str:
+    Args:
+        url:            URL to the article
+        request_delay:  Seconds to wait after the request (politeness).
+        timeout:        HTTP request timeout in seconds.
+ 
+    Returns:
+        True if content was extracted successfully, False otherwise.
+ 
+    Raises:
+        requests.HTTPError: If the server returns a non-2xx status.
+        requests.Timeout:   If the request times out.
+    """
+    logger.info(f"Fetching article: {url}")
+    requester = session or requests
+    response = requester.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
+    response.raise_for_status()
+    time.sleep(request_delay)
+ 
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    # Extract content (by class names)
+    content_tag = _html_extract_main_content(soup, url)
+    if not content_tag:
+        return False
+ 
+    _html_remove_clutter(content_tag)
+    return str(content_tag)
+
+
+# ──────────────────────────────────────────────
+# Step 3 – HTML to markdown
+# ──────────────────────────────────────────────
+def _md_remove_noise(markdown: str) -> str:
     """
     Removes everything from the first occurrence of a known noise heading
     onwards.
@@ -391,68 +431,82 @@ def strip_trailing_noise(markdown: str) -> str:
     if cut != -1:
         markdown = markdown[:cut].rstrip()
     return markdown
- 
- 
-def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) -> bool:
-    """
-    Fetches a heise.de article page and adds stage 2 keys to the given article
-    dict in-place (html, metadata).
- 
-    The title key is updated from the page's <h1> if present, as it is more
-    precise than the feed title.
- 
-    Args:
-        url:            URL to the article
-        request_delay:  Seconds to wait after the request (politeness).
-        timeout:        HTTP request timeout in seconds.
- 
-    Returns:
-        True if content was extracted successfully, False otherwise.
- 
-    Raises:
-        requests.HTTPError: If the server returns a non-2xx status.
-        requests.Timeout:   If the request times out.
-    """
-    logger.info(f"Fetching article: {url}")
-    requester = session or requests
-    response = requester.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
-    response.raise_for_status()
-    time.sleep(request_delay)
- 
-    soup = BeautifulSoup(response.text, "html.parser")
-    
-    # Extract content (by class names)
-    content_tag = _extract_main_content(soup, url)
-    if not content_tag:
-        return False
- 
-    _remove_clutter(content_tag)
-    return str(content_tag)
- 
+
+
+def heise_html2md(html_content):
+    content_markdown = html_to_markdown(html_content, source_type="web")
+    content_markdown = _md_remove_noise(content_markdown)
+    return content_markdown
+
  
 # ──────────────────────────────────────────────
 # Batch helper
 # ──────────────────────────────────────────────
  
-def scrape_latest_articles(
-    max_articles: int = 10,
+def scrape_articles_by_filter(
+    max_articles: int | None = 10,
+    days_back: int = 0,
+    exact_day: bool = False,
 ) -> list[dict]:
     """
-    Convenience function: fetches links and populates each article's HTML
-    content in one call.
+    Fetches article links and populates each article's HTML content.
+ 
+    Articles are filtered by date before fetching HTML, so only matching
+    articles cause network requests.
  
     Args:
-        max_articles:   Maximum number of articles to scrape.
-        request_delay:  Delay in seconds between requests.
+        max_articles:   Maximum number of articles to scrape. None = no limit.
+        days_back:      How many days back the cutoff date is.
+                        0 = today, 1 = yesterday, 2 = two days ago, etc.
+        exact_day:      If False (default), include all articles from the
+                        cutoff date up to and including today.
+                        If True, include only articles published on exactly
+                        the cutoff date.
+ 
+    Examples:
+        scrape_latest_articles(max_articles=10)
+            → 10 most recent articles, no date filter
+ 
+        scrape_latest_articles(max_articles=None, days_back=0)
+            → all articles published today
+ 
+        scrape_latest_articles(max_articles=None, days_back=1)
+            → all articles from yesterday and today
+ 
+        scrape_latest_articles(max_articles=None, days_back=1, exact_day=True)
+            → only articles published yesterday
  
     Returns:
         List of article dicts with stage 1 and stage 2 keys populated.
         Articles where content extraction failed are skipped.
     """
-    articles = fetch_article_links(max_articles=max_articles)
+    # Fetch all links from the feed (no max here – date filter comes next)
+    all_links = fetch_article_links()
+ 
+    # Apply date filter when days_back or exact_day is used
+    cutoff = date.today() - timedelta(days=days_back)
+ 
+    def _matches(article: dict) -> bool:
+        article_date_str = article.get("published")
+        if not article_date_str:
+            return False # no date -> skip
+        article_date = datetime.fromisoformat(article_date_str).date()
+        if exact_day:
+            return article_date == cutoff
+        return article_date >= cutoff
+ 
+    filtered = [a for a in all_links if _matches(a)]
+ 
+    if max_articles is not None:
+        filtered = filtered[:max_articles]
+ 
+    logger.info(
+        f"Fetching HTML for {len(filtered)} article(s) "
+        f"(cutoff={cutoff}, exact_day={exact_day}) ..."
+    )
  
     result: list[dict] = []
-    for article in articles:
+    for article in filtered:
         try:
             html_content = fetch_article_html(article["url"])
             if html_content:
@@ -461,7 +515,7 @@ def scrape_latest_articles(
         except Exception as exc:
             logger.warning(f"Skipping {article['url']}: {exc}")
  
-    logger.info(f"Successfully scraped {len(result)}/{len(articles)} articles.")
+    logger.info(f"Successfully scraped {len(result)}/{len(filtered)} articles.")
     return result
  
  
@@ -470,15 +524,16 @@ def scrape_latest_articles(
 # ──────────────────────────────────────────────
  
 if __name__ == "__main__":
-    import json
-    from html_to_markdown import html_to_markdown
     from datetime import datetime
     import locale
+    from html_to_markdown import html_to_markdown
+    from utils import save_json
+
     # German weekday names
     locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
             logging.FileHandler("debug.log"),
@@ -490,8 +545,9 @@ if __name__ == "__main__":
     if False:
         logger.info("Fetch all links from heise.de RSS feed")
         articles = fetch_article_links()
-        with open("temp/article_links.json", "w", encoding="utf-8") as f:
-            json.dump(articles, f, ensure_ascii=False, indent=2)
+        # Save to json
+        save_json(articles, "temp/article_links.json")
+        # Save to txt
         with open("temp/article_links.txt", "w", encoding="utf-8") as f:
             for a in articles:
                 dt = datetime.fromisoformat(a["published"])
@@ -500,16 +556,15 @@ if __name__ == "__main__":
     # fetch n latest articles and convert to markdown
     if True:
         logger.info("Fetch the latest n articles and process the html to markdown")
-        articles = scrape_latest_articles(max_articles=5)
+        articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
  
         for article in articles:
-            content_markdown = html_to_markdown(article["content_html"], source_type="web")
-            content_markdown = strip_trailing_noise(content_markdown)
+            content_markdown = heise_html2md(article["content_html"])
             article["content_markdown"] = content_markdown
- 
-        with open("temp/articles.json", "w", encoding="utf-8") as f:
-            data = [{k: v for k, v in a.items() if k != "html"} for a in articles]
-            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        # Save to json
+        save_json(articles, "temp/articles.json")
+        # Save to txt
         with open("temp/articles.txt", "w", encoding="utf-8") as f:
             for a in articles:
                 dt = datetime.fromisoformat(a["published"])

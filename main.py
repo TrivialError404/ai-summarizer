@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 
 from email_fetcher import get_emails_default
-from heise_scraper import scrape_latest_articles, strip_trailing_noise
+from heise_scraper import scrape_articles_by_filter, _md_remove_noise
 from html_to_markdown import html_to_markdown_for_llm, html_to_markdown
 from llm_ollama import query_ollama
 from utils import save_json, load_json
@@ -165,7 +165,7 @@ def summarise_heise_articles(
         logger.info(f"Loading articles from {HEISE_RAW_FILE}")
         articles = load_json(HEISE_RAW_FILE)
     else:
-        articles = scrape_latest_articles(max_articles=max_articles)
+        articles = scrape_articles_by_filter(max_articles=max_articles)
         save_json(articles, HEISE_RAW_FILE)
  
     logger.info(f"Processing {len(articles)} article(s) ...")
@@ -176,7 +176,7 @@ def summarise_heise_articles(
         title = article.get("title", article.get("url", ""))
         logger.info(f"[{i}/{len(articles)}] {title[:70]}")
  
-        md = strip_trailing_noise(
+        md = _md_remove_noise(
             html_to_markdown(article["html"], source_type="web")
         )
  
