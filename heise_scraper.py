@@ -104,22 +104,30 @@ def fetch_article_links(
  
     Returns:
         List of dicts in feed order (newest first), each with keys:
-            title (str), url (str), time (str|None).
+            title      (str)       -- article headline
+            url        (str)       -- canonical article URL (tracking params stripped)
+            article_id (str|None)  -- numeric heise article ID, e.g. "11210569"
+            date       (str|None)  -- publication date as "YYYY-MM-DD"
+            time       (str|None)  -- publication time as "HH:MM"
+            updated    (str|None)  -- last-modified timestamp (ISO 8601)
+            summary    (str|None)  -- short teaser text
+            author     (str|None)  -- author name
+            image_url  (str|None)  -- teaser image URL extracted from content HTML
  
     Raises:
         requests.HTTPError: If the server returns a non-2xx status.
         requests.Timeout:   If the request times out.
     """
+    import re as _re
     import xml.etree.ElementTree as ET
  
     NS = {
         "atom": "http://www.w3.org/2005/Atom",
-        "dc":   "http://purl.org/dc/elements/1.1/",
+        #"dc":   "http://purl.org/dc/elements/1.1/",
     }
  
     logger.info(f"Fetching article links from RSS feed: {HEISE_RSS_URL}")
-    requester = session or requests
-    response = requester.get(HEISE_RSS_URL, headers=DEFAULT_HEADERS, timeout=15)
+    response = requests.get(HEISE_RSS_URL, headers=DEFAULT_HEADERS, timeout=15)
     response.raise_for_status()
     time.sleep(request_delay)
  
@@ -127,20 +135,44 @@ def fetch_article_links(
     articles: list[dict] = []
  
     for entry in root.findall("atom:entry", NS):
+        # Title
         title = entry.findtext("atom:title", "", NS).strip()
- 
-        url = ""
-        for link_el in entry.findall("atom:link", NS):
-            if link_el.get("rel", "alternate") == "alternate":
-                url = link_el.get("href", "").strip()
-                break
-        if not url or not url.startswith(HEISE_BASE_URL):
-            continue
- 
+        # ID
+        id = entry.findtext("atom:id", "", NS)
+        id_match = _re.search(r"(\d{6,})", id) # <id>http://heise.de/-11210569</id> -> "11210569"
+        id_extracted = id_match.group(1) if id_match else None
+        # Dates
+        updated = entry.findtext("atom:updated", "", NS)
         published = entry.findtext("atom:published", "", NS)
-        pub_time  = published[11:16] if len(published) >= 16 else None
+        published_date  = published[:10]   if len(published) >= 10 else None
+        published_time  = published[11:16] if len(published) >= 16 else None
+        # Link
+        link = entry.find("atom:link", NS).attrib["href"]
+        url = link.split("?")[0].strip()
+        # Author
+        author = entry.findtext("atom:author/atom:name", "", NS)
+        # Summary
+        summary = entry.findtext("atom:summary", "", NS).strip()
+        # Metadata html
+        content = entry.findtext("atom:content", "", NS)
+        img_match = _re.search(r'<img[^>]+src="([^"]+)"', content)
+        image_url = img_match.group(1) if img_match else None
  
-        articles.append({"title": title, "url": url, "time": pub_time})
+        articles.append({
+            "title":            title,
+            "id":               id,
+            "id_extracted":     id_extracted,
+            "updated":          updated,
+            "published":        published,
+            "published_date":   published_date,
+            "published_time":   published_time,
+            "link":             link,
+            "url":              url,
+            "author":           author,
+            "summary":          summary,
+            "content":          content,
+            "image_url":        image_url,
+        })
  
         if max_articles and len(articles) >= max_articles:
             break
@@ -463,7 +495,7 @@ if __name__ == "__main__":
     )
  
     # fetch all article links only
-    if False:
+    if True:
         logger.info("Fetch all links from heise.de")
         articles = fetch_article_links()
         with open("temp/article_links.json", "w", encoding="utf-8") as f:
@@ -473,7 +505,7 @@ if __name__ == "__main__":
                 f.write(f"{a['time']} | {a['title']} | {a['url']}\n")
  
     # fetch n latest articles and convert to markdown
-    if True:
+    if False:
         logger.info("Fetch the latest n articles and process the html to markdown")
         articles = scrape_latest_articles(max_articles=20, request_delay=1.0)
  
