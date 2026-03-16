@@ -48,11 +48,15 @@ logger = logging.getLogger(__name__)
 # Constants
 # ──────────────────────────────────────────────
 
-from heise_auth import create_session
+heise_auth = True
 session = None
 try:
-    #session = create_session() # Authentication to heise with account
-    logger.info("Authentication to heise successful")
+    if heise_auth:
+        from heise_auth import create_session
+        session = create_session() # Authentication to heise with account
+        logger.info("Authentication to heise successful")
+    else:
+        logger.info("Skip Authentication to heise")
 except Exception as e:
     logger.warning(f"FAILED Authentication to heise: {e}")
 

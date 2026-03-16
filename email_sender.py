@@ -214,7 +214,7 @@ def send_email(
             smtp.login(username, password)
             smtp.sendmail(sender, to, msg.as_string())
 
-    logger.info("Email sent successfully.")
+    logger.info(f"Email sent successfully. Title: {subject}")
 
 
 def send_email_to_self(
@@ -264,7 +264,6 @@ def send_email_to_self(
         smtp_port=int(smtp_port) if smtp_port else None,
         body_type=body_type,
     )
-
 
 # ──────────────────────────────────────────────
 # Entry point

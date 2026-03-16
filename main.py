@@ -17,10 +17,11 @@ import logging
 from pathlib import Path
 
 from email_fetcher import get_emails_default
+from email_sender import send_email_to_self
 from heise_scraper import scrape_articles_by_filter, md_remove_noise
 from html_to_markdown import html_to_markdown, email_md_remove_reply
 from llm_ollama import query_ollama
-from utils import save_json, load_json
+from utils import save_json, load_json, timestamp_iso_8601_to_str
 from datetime import datetime
 import locale
 locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
@@ -122,15 +123,22 @@ def summarise_emails(from_file: bool = False) -> list[dict]:
             "prompt":       EMAIL_PROMPT.format(content_markdown="... [content_markdown] ..."),
             "llm_response": llm_response,
         })
- 
+    
+    # Save
     save_json(results, "temp/email/emails_llm.json")
-    # Save to txt
     with open("temp/email/emails_llm.txt", "w", encoding="utf-8") as f:
-        for e in results:
-            f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
-            f.write(e["llm_response"]["response"])
+        for email in results:
+            f.write(f"{email['From']} | {email['Subject']} | {email['Date']}\n")
+            f.write(email["llm_response"]["response"])
             f.write("\n" + "-"*80 + "\n\n")
-    return results
+
+    # Email
+    summary_string = ""
+    for email in results:
+        summary_string += f"{timestamp_iso_8601_to_str(email['Date'])} | {email['From']} | {email['Subject']}\n"
+        summary_string += email["llm_response"]["response"]
+        summary_string += "\n\n"
+    send_email_to_self(subject="Summary Email", body=summary_string)
  
  
 # ──────────────────────────────────────────────
@@ -196,17 +204,22 @@ def summarise_heise_articles(
             "llm_response":         llm_response,
         })
     
-    # Save to json
+    # Save
     save_json(results, "temp/heise/articles_llm.json")
-    # Save to txt
     with open("temp/heise/articles_llm.txt", "w", encoding="utf-8") as f:
-        for a in results:
-            dt = datetime.fromisoformat(a["published"])
-            f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
-            f.write(a["content_markdown"])
+        for article in results:
+            f.write(f"{timestamp_iso_8601_to_str(article["published"])} | {article['title']} | {article['url']}\n")
+            f.write(article["llm_response"]["response"])
             f.write("\n" + "-"*80 + "\n\n")
-    return results
- 
+    
+    # Email
+    summary_string = ""
+    for article in results:
+        summary_string += f"{timestamp_iso_8601_to_str(article["published"])} | {article['title']} | {article['url']}\n"
+        summary_string += article["llm_response"]["response"]
+        summary_string += "\n\n"
+    send_email_to_self(subject="Summary heise.de", body=summary_string)
+
  
 # ──────────────────────────────────────────────
 # Entry point
