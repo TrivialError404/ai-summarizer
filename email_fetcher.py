@@ -446,21 +446,6 @@ def mark_as_unread(
 
 
 # ──────────────────────────────────────────────
-# Persistence
-# ──────────────────────────────────────────────
-
-def _serialize(emails: list[dict]) -> list[dict]:
-    """Converts non-serializable fields (datetime → ISO string) for export."""
-    result = []
-    for e in emails:
-        entry = dict(e)
-        if isinstance(entry.get("Date"), datetime):
-            entry["Date"] = entry["Date"].isoformat()
-        result.append(entry)
-    return result
-
-
-# ──────────────────────────────────────────────
 # Main fetch function
 # ──────────────────────────────────────────────
 
@@ -607,11 +592,14 @@ def get_emails_default(folder: str = "INBOX", unread: bool = True, max_emails: O
 
 
 if __name__ == "__main__":
-    from utils import save_json
+    from utils import save_json, load_json
+    from html_to_markdown import html_to_markdown, email_md_remove_reply
 
     load_dotenv()
     USER     = os.environ.get("IMAP_USER")      # username: you@gmail.com
     PASSWORD = os.environ.get("IMAP_PASSWORD")  # password: App Password (not Account Password)
+
+    from_file = True
 
     if False:
         # List available folders for your provider:
@@ -621,22 +609,34 @@ if __name__ == "__main__":
         print(get_unread_count(USER, PASSWORD, provider="gmail"))
 
     if True:
-        emails = fetch_emails(
-            username=USER,
-            password=PASSWORD,
-            # provider is auto-detected from the email domain
-            # override with provider="outlook" or imap_host="mail.example.com" if needed
-            folder="INBOX",
-            unread=True,
-            max_emails=50,
-        )
+        if from_file:
+            emails = load_json("temp/email/emails_raw.json")
+        else:
+            emails = fetch_emails(
+                username=USER,
+                password=PASSWORD,
+                folder="INBOX",
+                unread=True,
+                max_emails=50,
+            )
+            # Save to json
+            save_json(emails, "temp/email/emails_raw.json")
+
+        # Markdown
+        for e in emails:
+            if e.get("text/html"):
+                content_markdown = html_to_markdown(e["text/html"], source_type="email", ignore_links=True, ignore_images=True)
+            else:
+                content = e.get("text/plain", "")
+                content_markdown = email_md_remove_reply(content)
+            e["content_markdown"] = content_markdown
+            
 
         # Save to json
-        emails = _serialize(emails)
-        save_json(emails, "temp/emails.json")
+        save_json(emails, "temp/email/emails_md.json")
         # Save to txt
-        with open("temp/emails.txt", "w", encoding="utf-8") as f:
+        with open("temp/email/emails.txt", "w", encoding="utf-8") as f:
             for e in emails:
-                f.write(f"{e['From']} | {e['Subject']} | {e['Date']} |")
-                f.write(e['text/plain'])
+                f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
+                f.write(e["content_markdown"])
                 f.write("\n" + "-"*80 + "\n\n")

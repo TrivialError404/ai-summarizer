@@ -18,9 +18,12 @@ from pathlib import Path
 
 from email_fetcher import get_emails_default
 from heise_scraper import scrape_articles_by_filter, md_remove_noise
-from html_to_markdown import html_to_markdown_for_llm, html_to_markdown
+from html_to_markdown import html_to_markdown, email_md_remove_reply
 from llm_ollama import query_ollama
 from utils import save_json, load_json
+from datetime import datetime
+import locale
+locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,18 +33,6 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 
 DIR_TEMP = Path("temp")
-
-EMAIL_RAW_FILE    = DIR_TEMP / "emails_raw.json"
-EMAIL_RESULT_FILE = DIR_TEMP / "emails_summarised.json"
-
-HEISE_RAW_FILE    = DIR_TEMP / "heise_raw.json"
-HEISE_RESULT_FILE = DIR_TEMP / "heise_summarised.json"
-
-# ──────────────────────────────────────────────
-# LLM settings
-# ──────────────────────────────────────────────
-
-COLLECT_METRICS = True   # Set False to skip token/latency tracking
 
 # ──────────────────────────────────────────────
 # Prompt templates
@@ -57,7 +48,7 @@ Rules:
 - Only summarize the content.
 
 Email:
-{content}"""
+{content_markdown}"""
 
 
 HEISE_PROMPT = """\
@@ -69,7 +60,7 @@ Rules:
 - Do NOT use filler phrases.
 
 Article:
-{content}"""
+{content_markdown}"""
 
 
 # ──────────────────────────────────────────────
@@ -91,17 +82,18 @@ def summarise_emails(from_file: bool = False) -> list[dict]:
         List of enriched email dicts with 'content', 'prompt', and
         'llm_response' keys added.
     """
+
     # ── Fetch or load ──────────────────────────
     if from_file:
-        logger.info(f"Loading emails from {EMAIL_RAW_FILE}")
-        emails = load_json(EMAIL_RAW_FILE)
+        logger.info(f"Loading emails from file")
+        emails = load_json("temp/email/emails_raw.json")
     else:
-        emails = get_emails_default()
-        save_json(emails, EMAIL_RAW_FILE)
+        emails = get_emails_default(folder="INBOX")
+        save_json(emails, "temp/email/emails_raw.json")
  
     logger.info(f"Processing {len(emails)} email(s) ...")
  
-    # ── Summarise each email ───────────────────
+    # ── Process each email ─────────────────────
     results = []
     for i, email in enumerate(emails, 1):
         subject = email.get("Subject", "")
@@ -109,27 +101,35 @@ def summarise_emails(from_file: bool = False) -> list[dict]:
  
         # Convert body to clean Markdown
         if email.get("text/html"):
-            content = html_to_markdown_for_llm(email["text/html"], source_type="email")
+            content_markdown = html_to_markdown(email["text/html"], source_type="email", )
         else:
             content = email.get("text/plain", "")
+            content_markdown = email_md_remove_reply(content)
  
-        if not content.strip():
+        if not content_markdown.strip():
             logger.warning(f"  Skipping - no readable content.")
-            results.append({**email, "content": "", "prompt": "", "llm_response": None})
+            results.append({**email, "content_markdown": "", "prompt": "", "llm_response": None})
             continue
- 
-        prompt = EMAIL_PROMPT.format(content=content)
-        llm_response = query_ollama(prompt, stream=False, collect_metrics=COLLECT_METRICS)
+        
+        # LLM
+        prompt = EMAIL_PROMPT.format(content_markdown=content_markdown)
+        llm_response = query_ollama(prompt, stream=True, collect_metrics=True)
         logger.info(f"  → {llm_response['response']}")
  
         results.append({
             **email,
-            "content":      content,
-            "prompt":       EMAIL_PROMPT.format(content="... [content] ..."),
+            "content_markdown":      content_markdown,
+            "prompt":       EMAIL_PROMPT.format(content_markdown="... [content_markdown] ..."),
             "llm_response": llm_response,
         })
  
-    save_json(results, EMAIL_RESULT_FILE)
+    save_json(results, "temp/email/emails_llm.json")
+    # Save to txt
+    with open("temp/email/emails_llm.txt", "w", encoding="utf-8") as f:
+        for e in results:
+            f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
+            f.write(e["llm_response"]["response"])
+            f.write("\n" + "-"*80 + "\n\n")
     return results
  
  
@@ -138,7 +138,6 @@ def summarise_emails(from_file: bool = False) -> list[dict]:
 # ──────────────────────────────────────────────
  
 def summarise_heise_articles(
-    max_articles: int = 5,
     from_file: bool = False,
 ) -> list[dict]:
     """
@@ -162,42 +161,50 @@ def summarise_heise_articles(
     """
     # ── Scrape or load ─────────────────────────
     if from_file:
-        logger.info(f"Loading articles from {HEISE_RAW_FILE}")
-        articles = load_json(HEISE_RAW_FILE)
+        logger.info(f"Loading articles from file")
+        articles = load_json("temp/heise/articles_raw.json")
     else:
-        articles = scrape_articles_by_filter(max_articles=max_articles)
-        save_json(articles, HEISE_RAW_FILE)
+        articles = scrape_articles_by_filter(max_articles=1, days_back=0, exact_day=False)
+        save_json(articles, "temp/heise/articles_raw.json")
  
     logger.info(f"Processing {len(articles)} article(s) ...")
  
-    # ── Summarise each article ─────────────────
+    # ── Process each article ───────────────────
     results = []
     for i, article in enumerate(articles, 1):
         title = article.get("title", article.get("url", ""))
         logger.info(f"[{i}/{len(articles)}] {title[:70]}")
+
+        # HTML to markdown
+        content_markdown = html_to_markdown(article["content_html"], source_type="web")
+        content_markdown = md_remove_noise(content_markdown)
  
-        md = md_remove_noise(
-            html_to_markdown(article["html"], source_type="web")
-        )
- 
-        if not md.strip():
+        if not content_markdown.strip():
             logger.warning(f"  Skipping – no readable content.")
             results.append({**article, "markdown": "", "prompt": "", "llm_response": None})
             continue
  
-        prompt = HEISE_PROMPT.format(content=md)
-        llm_response = query_ollama(prompt, stream=True, collect_metrics=COLLECT_METRICS)
+        prompt = HEISE_PROMPT.format(content_markdown=content_markdown)
+        llm_response = query_ollama(prompt, stream=True, collect_metrics=True)
         logger.info(f"  → {llm_response['response']}")
  
         results.append({
             **article,
-            "html":         "",   # drop raw HTML from output to keep file readable
-            "markdown":     md,
-            "prompt":       HEISE_PROMPT.format(content="... [content] ..."),
-            "llm_response": llm_response,
+            "html":                 "",   # drop raw HTML from output to keep file readable
+            "content_markdown":     content_markdown,
+            "prompt":               HEISE_PROMPT.format(content_markdown="... [content_markdown] ..."),
+            "llm_response":         llm_response,
         })
- 
-    save_json(results, HEISE_RESULT_FILE)
+    
+    # Save to json
+    save_json(results, "temp/heise/articles_llm.json")
+    # Save to txt
+    with open("temp/heise/articles_llm.txt", "w", encoding="utf-8") as f:
+        for a in results:
+            dt = datetime.fromisoformat(a["published"])
+            f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
+            f.write(a["content_markdown"])
+            f.write("\n" + "-"*80 + "\n\n")
     return results
  
  
@@ -208,7 +215,7 @@ def summarise_heise_articles(
 if __name__ == "__main__":
  
     # Summarize emails
-    #email_results = summarise_emails(from_file=False)
- 
+    email_results = summarise_emails(from_file=True)
+    
     # Summarize articles from heise.de
-    heise_results = summarise_heise_articles(max_articles=5, from_file=True)
+    heise_results = summarise_heise_articles(from_file=True)

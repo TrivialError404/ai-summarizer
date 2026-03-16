@@ -193,7 +193,7 @@ def _postprocess_markdown(md: str) -> str:
     return md.strip()
 
 
-def _email_remove_reply(md: str) -> str:
+def email_md_remove_reply(md: str) -> str:
     """
     Removes quoted reply blocks starting with "Von:" or "From:" followed
     by an email address. Used only for email source type.
@@ -308,33 +308,6 @@ def html_to_markdown(
     processed_md = _postprocess_markdown(raw_md)
 
     if source_type == "email":
-        processed_md = _email_remove_reply(processed_md)
+        processed_md = email_md_remove_reply(processed_md)
 
     return processed_md
-
-
-def html_to_markdown_for_llm(html: str, source_type: SourceType = "web") -> str:
-    """
-    Converts HTML to Markdown optimised for LLM processing.
-
-    Uses aggressive settings: links and images are stripped, only readable
-    prose and structure are retained. Works for both email and web content.
-
-    This is a convenience wrapper around html_to_markdown() with settings
-    tuned for feeding clean text into a language model.
-
-    Args:
-        html:        Raw HTML string.
-        source_type: "email" for email HTML, "web" for general web pages.
-
-    Returns:
-        Plain, clean Markdown string without links or images.
-    """
-    return html_to_markdown(
-        html,
-        source_type=source_type,
-        ignore_links=True,
-        ignore_images=True,
-        body_width=0,
-        preprocess=True,
-    )

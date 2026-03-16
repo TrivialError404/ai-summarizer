@@ -36,7 +36,7 @@ USAGE:
 import logging
 import re
 import time
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import Optional
 
 import requests
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 from heise_auth import create_session
 session = None
 try:
-    session = create_session()
+    #session = create_session() # Authentication to heise with account
     logger.info("Authentication to heise successful")
 except Exception as e:
     logger.warning(f"FAILED Authentication to heise: {e}")
@@ -421,6 +421,7 @@ def md_remove_noise(markdown: str) -> str:
         "## Empfohlener redaktioneller Inhalt",
         "### Lesen Sie auch",
         "### E-Mail-Adresse",
+        "### Hören Sie auch",
     ]
     # Find the earliest occurrence across all patterns and cut there.
     # This handles cases where multiple noise headings appear in one article.
@@ -518,10 +519,9 @@ def scrape_articles_by_filter(
 # ──────────────────────────────────────────────
  
 if __name__ == "__main__":
-    from datetime import datetime
     import locale
     from html_to_markdown import html_to_markdown
-    from utils import save_json
+    from utils import save_json, load_json
 
     # German weekday names
     locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
@@ -534,15 +534,17 @@ if __name__ == "__main__":
             logging.StreamHandler()
         ],
     )
- 
+    
+    from_file = True
+
     # fetch all article links only
     if False:
         logger.info("Fetch all links from heise.de RSS feed")
         articles = fetch_article_links()
         # Save to json
-        save_json(articles, "temp/article_links.json")
+        save_json(articles, "temp/heise/links.json")
         # Save to txt
-        with open("temp/article_links.txt", "w", encoding="utf-8") as f:
+        with open("temp/heise/links.txt", "w", encoding="utf-8") as f:
             for a in articles:
                 dt = datetime.fromisoformat(a["published"])
                 f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
@@ -550,8 +552,14 @@ if __name__ == "__main__":
     # fetch n latest articles and convert to markdown
     if True:
         logger.info("Fetch the latest n articles and process the html to markdown")
-        articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
- 
+        
+        if from_file:
+            articles = load_json("temp/heise/articles_raw.json")
+        else:
+            articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
+            save_json(articles, "temp/heise/articles_raw.json")
+
+        # Markdown
         for article in articles:
             # HTML to Markdown
             content_markdown = html_to_markdown(article["content_html"], source_type="web")
@@ -559,9 +567,9 @@ if __name__ == "__main__":
             article["content_markdown"] = content_markdown
 
         # Save to json
-        save_json(articles, "temp/articles.json")
+        save_json(articles, "temp/heise/articles_md.json")
         # Save to txt
-        with open("temp/articles.txt", "w", encoding="utf-8") as f:
+        with open("temp/heise/articles_md.txt", "w", encoding="utf-8") as f:
             for a in articles:
                 dt = datetime.fromisoformat(a["published"])
                 f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
