@@ -48,17 +48,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ──────────────────────────────────────────────
 
-heise_auth = True
-session = None
-try:
-    if heise_auth:
-        from heise_auth import create_session
-        session = create_session() # Authentication to heise with account
-        logger.info("Authentication to heise successful")
-    else:
-        logger.info("Skip Authentication to heise")
-except Exception as e:
-    logger.warning(f"FAILED Authentication to heise: {e}")
+HEISE_AUTH = True
 
 HEISE_ARCHIVE_URL = "https://www.heise.de/newsticker/archiv/"
 HEISE_BASE_URL    = "https://www.heise.de"
@@ -78,13 +68,19 @@ DEFAULT_HEADERS = {
 ARTICLE_SELECTORS = [
     ".article-content",
     ".article-layout__content",
-    #"article.article-content",
-    #"div.article-content",
-    #"div[itemprop='articleBody']",
-    #"div.article__body",
-    #"main article",
-    #"article",
 ]
+
+# heise.de login
+session = None
+try:
+    if HEISE_AUTH:
+        from heise_auth import create_session
+        session = create_session() # Authentication to heise with account
+        logger.info("Authentication to heise successful")
+    else:
+        logger.info("Skip Authentication to heise")
+except Exception as e:
+    logger.warning(f"FAILED Authentication to heise: {e}")
 
 
 # ──────────────────────────────────────────────
@@ -225,7 +221,7 @@ def fetch_article_links_archive(
     """
     logger.info(f"Fetching article links from archive page: {HEISE_ARCHIVE_URL}")
     requester = session or requests
-    response = requester.get(HEISE_RSS_URL, headers=DEFAULT_HEADERS, timeout=15)
+    response = requester.get(HEISE_ARCHIVE_URL, headers=DEFAULT_HEADERS, timeout=15)
     response.raise_for_status()
     time.sleep(request_delay)
  

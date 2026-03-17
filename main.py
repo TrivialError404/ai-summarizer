@@ -137,7 +137,7 @@ def summarise_emails(from_file: bool = False) -> list[dict]:
     for email in results:
         summary_string += f"{timestamp_iso_8601_to_str(email['Date'])} | {email['From']} | {email['Subject']}\n"
         summary_string += email["llm_response"]["response"]
-        summary_string += "\n\n"
+        summary_string += "\n" + "-"*80 + "\n\n"
     send_email_to_self(subject="Summary Email", body=summary_string)
  
  
@@ -217,7 +217,7 @@ def summarise_heise_articles(
     for article in results:
         summary_string += f"{timestamp_iso_8601_to_str(article["published"])} | {article['title']} | {article['url']}\n"
         summary_string += article["llm_response"]["response"]
-        summary_string += "\n\n"
+        summary_string += "\n" + "-"*80 + "\n\n"
     send_email_to_self(subject="Summary heise.de", body=summary_string)
 
  
