@@ -342,21 +342,4 @@ def query_ollama(
         )
 
 
-# ──────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────
 
-if __name__ == "__main__":
-    print("Available models:", list_local_models())
-
-    result = query_ollama(
-        prompt="Hello world",
-        model=DEFAULT_MODEL,
-        stream=True,
-        collect_metrics=True,
-    )
-
-    print("\n--- Result ---")
-    print("response:", result["response"])
-    if "metrics" in result:
-        print("Metrics:", json.dumps(result["metrics"], indent=2))

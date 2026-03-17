@@ -74,7 +74,7 @@ ARTICLE_SELECTORS = [
 session = None
 try:
     if HEISE_AUTH:
-        from heise_auth import create_session
+        from sources.heise.auth import create_session
         session = create_session() # Authentication to heise with account
         logger.info("Authentication to heise successful")
     else:
@@ -514,64 +514,4 @@ def scrape_articles_by_filter(
     return result
  
  
-# ──────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────
  
-if __name__ == "__main__":
-    import locale
-    from html_to_markdown import html_to_markdown
-    from utils import save_json, load_json
-
-    # German weekday names
-    locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler("debug.log"),
-            logging.StreamHandler()
-        ],
-    )
-    
-    from_file = True
-
-    # fetch all article links only
-    if False:
-        logger.info("Fetch all links from heise.de RSS feed")
-        articles = fetch_article_links()
-        # Save to json
-        save_json(articles, "temp/heise/links.json")
-        # Save to txt
-        with open("temp/heise/links.txt", "w", encoding="utf-8") as f:
-            for a in articles:
-                dt = datetime.fromisoformat(a["published"])
-                f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
- 
-    # fetch n latest articles and convert to markdown
-    if True:
-        logger.info("Fetch the latest n articles and process the html to markdown")
-        
-        if from_file:
-            articles = load_json("temp/heise/articles_raw.json")
-        else:
-            articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
-            save_json(articles, "temp/heise/articles_raw.json")
-
-        # Markdown
-        for article in articles:
-            # HTML to Markdown
-            content_markdown = html_to_markdown(article["content_html"], source_type="web")
-            content_markdown = md_remove_noise(content_markdown)
-            article["content_markdown"] = content_markdown
-
-        # Save to json
-        save_json(articles, "temp/heise/articles_md.json")
-        # Save to txt
-        with open("temp/heise/articles_md.txt", "w", encoding="utf-8") as f:
-            for a in articles:
-                dt = datetime.fromisoformat(a["published"])
-                f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
-                f.write(a["content_markdown"])
-                f.write("\n" + "-"*80 + "\n\n")

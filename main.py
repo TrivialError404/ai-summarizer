@@ -16,12 +16,12 @@ Results are saved to the temp/ directory as JSON files for offline analysis.
 import logging
 from pathlib import Path
 
-from email_fetcher import get_emails_default
-from email_sender import send_email_to_self
-from heise_scraper import scrape_articles_by_filter, md_remove_noise
-from html_to_markdown import html_to_markdown, email_md_remove_reply
-from llm_ollama import query_ollama
-from utils import save_json, load_json, timestamp_iso_8601_to_str
+from sources.email.fetcher import get_emails_default
+from sources.heise.scraper import scrape_articles_by_filter, md_remove_noise
+from lib.email_sender import send_email_to_self
+from lib.html_to_markdown import html_to_markdown, email_md_remove_reply
+from lib.llm_ollama import query_ollama
+from lib.utils import save_json, load_json, timestamp_iso_8601_to_str
 from datetime import datetime
 import locale
 locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")

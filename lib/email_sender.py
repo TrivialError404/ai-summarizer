@@ -265,17 +265,4 @@ def send_email_to_self(
         body_type=body_type,
     )
 
-# ──────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────
 
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-
-    send_email_to_self(
-        subject="Test",
-        body="Das ist eine Testmail vom Email Sender.",
-    )
