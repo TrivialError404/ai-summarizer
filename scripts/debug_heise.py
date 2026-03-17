@@ -1,8 +1,7 @@
 """
 Debug script for the Heise pipeline.
 
-Scrapes or loads articles, converts HTML to Markdown, and dumps the results
-to temp/heise/ for manual inspection.
+Toggle individual functions by commenting/uncommenting in the __main__ block.
 
 Usage (from project root):
     python scripts/debug_heise.py
@@ -37,26 +36,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-FROM_FILE = True
 
-# ── Fetch or load ────────────────────────────
-if FROM_FILE:
-    articles = load_json("temp/heise/articles_raw.json")
-else:
-    articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
-    save_json(articles, "temp/heise/articles_raw.json")
+def fetch_links():
+    """Fetch all article links from RSS and save to temp/heise/links.*"""
+    logger.info("Fetch all links from heise.de RSS feed")
+    articles = fetch_article_links()
+    save_json(articles, "temp/heise/links.json")
+    with open("temp/heise/links.txt", "w", encoding="utf-8") as f:
+        for a in articles:
+            dt = datetime.fromisoformat(a["published"])
+            f.write(f"{dt.strftime('%A %d.%m.%Y %H:%M')} | {a['title']} | {a['url']}\n")
 
-# ── Convert to Markdown ──────────────────────
-for article in articles:
-    content_markdown = html_to_markdown(article["content_html"], source_type="web")
-    content_markdown = md_remove_noise(content_markdown)
-    article["content_markdown"] = content_markdown
 
-# ── Save results ─────────────────────────────
-save_json(articles, "temp/heise/articles_md.json")
-with open("temp/heise/articles_md.txt", "w", encoding="utf-8") as f:
-    for a in articles:
-        dt = datetime.fromisoformat(a["published"])
-        f.write(f"{dt.strftime('%A %d.%m.%Y %H:%M')} | {a['title']} | {a['url']}\n")
-        f.write(a["content_markdown"])
-        f.write("\n" + "-" * 80 + "\n\n")
+def fetch_articles_to_markdown(from_file=True):
+    """Fetch/load articles, convert to Markdown, save to temp/heise/articles_md.*"""
+    if from_file:
+        articles = load_json("temp/heise/articles_raw.json")
+    else:
+        articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
+        save_json(articles, "temp/heise/articles_raw.json")
+
+    for article in articles:
+        content_markdown = html_to_markdown(article["content_html"], source_type="web")
+        content_markdown = md_remove_noise(content_markdown)
+        article["content_markdown"] = content_markdown
+
+    save_json(articles, "temp/heise/articles_md.json")
+    with open("temp/heise/articles_md.txt", "w", encoding="utf-8") as f:
+        for a in articles:
+            dt = datetime.fromisoformat(a["published"])
+            f.write(f"{dt.strftime('%A %d.%m.%Y %H:%M')} | {a['title']} | {a['url']}\n")
+            f.write(a["content_markdown"])
+            f.write("\n" + "-" * 80 + "\n\n")
+
+
+if __name__ == "__main__":
+    # fetch_links()
+    fetch_articles_to_markdown(from_file=True)
