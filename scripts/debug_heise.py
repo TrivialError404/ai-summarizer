@@ -16,10 +16,10 @@ import locale
 import logging
 from datetime import datetime
 
-from sources.heise.scraper import (
+from sources.heise.heise_scraper import (
     fetch_article_links,
     scrape_articles_by_filter,
-    md_remove_noise,
+    md_postprocess_remove_section_noise,
 )
 from lib.html_to_markdown import html_to_markdown
 from lib.utils import save_json, load_json
@@ -58,7 +58,7 @@ def fetch_articles_to_markdown(from_file=True):
 
     for article in articles:
         content_markdown = html_to_markdown(article["content_html"], source_type="web")
-        content_markdown = md_remove_noise(content_markdown)
+        content_markdown = md_postprocess_remove_section_noise(content_markdown)
         article["content_markdown"] = content_markdown
 
     save_json(articles, "temp/heise/articles_md.json")

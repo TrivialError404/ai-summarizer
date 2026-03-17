@@ -16,12 +16,13 @@ Results are saved to the temp/ directory as JSON files for offline analysis.
 import logging
 from pathlib import Path
 
-from sources.email.fetcher import get_emails_default
-from sources.heise.scraper import scrape_articles_by_filter, md_remove_noise
-from lib.email_sender import send_email_to_self
-from lib.html_to_markdown import html_to_markdown, email_md_remove_reply
+from lib.email.email_fetcher import get_emails_default
+from lib.email.email_sender import send_email_to_self
+from lib.html_to_markdown import html_to_markdown
 from lib.llm_ollama import query_ollama
 from lib.utils import save_json, load_json, timestamp_iso_8601_to_str
+from sources.email.email_postprocessing import md_postprocess_remove_reply
+from sources.heise.heise_scraper import scrape_articles_by_filter, md_postprocess_remove_section_noise
 from datetime import datetime
 import locale
 locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
@@ -104,8 +105,8 @@ def summarise_emails(from_file: bool = False) -> list[dict]:
         if email.get("text/html"):
             content_markdown = html_to_markdown(email["text/html"], source_type="email", )
         else:
-            content = email.get("text/plain", "")
-            content_markdown = email_md_remove_reply(content)
+            content_markdown = email.get("text/plain", "")
+        content_markdown = md_postprocess_remove_reply(content_markdown)
  
         if not content_markdown.strip():
             logger.warning(f"  Skipping - no readable content.")
@@ -185,7 +186,7 @@ def summarise_heise_articles(
 
         # HTML to markdown
         content_markdown = html_to_markdown(article["content_html"], source_type="web")
-        content_markdown = md_remove_noise(content_markdown)
+        content_markdown = md_postprocess_remove_section_noise(content_markdown)
  
         if not content_markdown.strip():
             logger.warning(f"  Skipping – no readable content.")

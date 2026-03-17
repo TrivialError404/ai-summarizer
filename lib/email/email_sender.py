@@ -1,33 +1,30 @@
 """
 Email Sender
 ============
-Sends emails via SMTP. Mirrors the provider registry and credential
-pattern from email_fetcher.py – the same IMAP_USER / IMAP_PASSWORD
-environment variables are reused so no additional configuration is needed
-for known providers.
+Sends emails via SMTP. Uses the shared provider registry from
+lib.email.providers. The same IMAP_USER / IMAP_PASSWORD environment
+variables are reused so no additional configuration is needed for known
+providers.
 
 ENVIRONMENT VARIABLES (.env):
-    IMAP_USER     = your@email.com      (reused from email_fetcher)
-    IMAP_PASSWORD = your-app-password   (reused from email_fetcher)
+    IMAP_USER     = your@email.com
+    IMAP_PASSWORD = your-app-password
 
     For custom / self-hosted servers, additionally set:
     SMTP_HOST     = mail.company.com
     SMTP_PORT     = 587                 (optional, auto-detected otherwise)
 
 USAGE:
-    # Simplest – provider and credentials auto-detected
-    send_email_default(
-        subject="Zusammenfassung",
-        body="Hier steht der Text.",
-    )
+    from lib.email.email_sender import send_email, send_email_to_self
 
-    # Explicit
+    send_email_to_self(subject="Test", body="Hello.")
+
     send_email(
         username="you@gmail.com",
         password="app-password",
-        subject="Zusammenfassung",
-        body="Hier steht der Text.",
-        to="empfaenger@example.com",   # defaults to username (send to self)
+        subject="Test",
+        body="Hello.",
+        to="recipient@example.com",
     )
 
 DEPENDENCIES:
@@ -43,80 +40,14 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+from lib.email.providers import PROVIDERS, detect_provider
+
 logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────
-# Provider registry
+# Host resolution
 # ──────────────────────────────────────────────
-
-SMTP_PROVIDERS: dict[str, dict] = {
-    "gmail": {
-        "host": "smtp.gmail.com",
-        "port": 587,
-    },
-    "outlook": {
-        "host": "smtp.office365.com",
-        "port": 587,
-    },
-    "yahoo": {
-        "host": "smtp.mail.yahoo.com",
-        "port": 587,
-    },
-    "icloud": {
-        "host": "smtp.mail.me.com",
-        "port": 587,
-    },
-    "gmx": {
-        "host": "mail.gmx.com",
-        "port": 587,
-    },
-    "web.de": {
-        "host": "smtp.web.de",
-        "port": 587,
-    },
-    "zoho": {
-        "host": "smtp.zoho.com",
-        "port": 587,
-    },
-}
-
-# Mirrors DOMAIN_TO_PROVIDER from email_fetcher.py
-DOMAIN_TO_PROVIDER: dict[str, str] = {
-    "gmail.com":      "gmail",
-    "googlemail.com": "gmail",
-    "outlook.com":    "outlook",
-    "hotmail.com":    "outlook",
-    "hotmail.de":     "outlook",
-    "hotmail.co.uk":  "outlook",
-    "live.com":       "outlook",
-    "live.de":        "outlook",
-    "msn.com":        "outlook",
-    "yahoo.com":      "yahoo",
-    "yahoo.de":       "yahoo",
-    "yahoo.co.uk":    "yahoo",
-    "ymail.com":      "yahoo",
-    "icloud.com":     "icloud",
-    "me.com":         "icloud",
-    "mac.com":        "icloud",
-    "gmx.com":        "gmx",
-    "gmx.de":         "gmx",
-    "gmx.net":        "gmx",
-    "gmx.at":         "gmx",
-    "gmx.ch":         "gmx",
-    "web.de":         "web.de",
-    "zoho.com":       "zoho",
-    "zohomail.com":   "zoho",
-}
-
-
-def _detect_provider(username: str) -> Optional[str]:
-    """Returns the provider key for a given email address, or None."""
-    if "@" not in username:
-        return None
-    domain = username.split("@")[-1].lower()
-    return DOMAIN_TO_PROVIDER.get(domain)
-
 
 def _resolve_host_port(
     username: str,
@@ -144,10 +75,10 @@ def _resolve_host_port(
     if smtp_host:
         return smtp_host, smtp_port or 587
 
-    provider = _detect_provider(username)
+    provider = detect_provider(username)
     if provider:
         logger.info(f"Auto-detected SMTP provider '{provider}' from {username!r}.")
-        entry = SMTP_PROVIDERS[provider]
+        entry = PROVIDERS[provider]["smtp"]
         return entry["host"], smtp_port or entry["port"]
 
     raise ValueError(

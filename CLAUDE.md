@@ -47,30 +47,34 @@ Copy `.env.example` to `.env`. Key variables:
 ## Architecture
 
 ```
-main.py                         # orchestration, prompt templates, pipeline logic
-├── sources/                    # data sources (one subpackage per source)
-│   ├── email/fetcher.py        # IMAP client, provider auto-detection
+main.py                              # orchestration, prompt templates, pipeline logic
+├── sources/                         # source-specific logic (one subpackage per source)
+│   ├── email/
+│   │   └── email_postprocessing.py  # md_postprocess_remove_reply
 │   └── heise/
-│       ├── scraper.py          # RSS + archive scraping, content extraction
-│       └── auth.py             # Playwright-based login for heise.de
-├── lib/                        # generic, reusable modules
-│   ├── llm_ollama.py           # Ollama /api/generate wrapper
-│   ├── html_to_markdown.py     # source-aware HTML→Markdown conversion
-│   ├── email_sender.py         # SMTP client, provider auto-detection
-│   └── utils.py                # JSON I/O, date formatting
-├── scripts/                    # debug/development scripts
-├── deploy/                     # Dockerfile, docker-compose.yml, entrypoint.sh
-└── tests/                      # (planned)
+│       ├── heise_scraper.py         # RSS + archive scraping, content extraction, md_postprocess_remove_section_noise
+│       └── heise_auth.py            # Playwright-based login for heise.de
+├── lib/                             # generic, reusable modules
+│   ├── email/
+│   │   ├── providers.py             # shared IMAP/SMTP provider registry (single source of truth)
+│   │   ├── email_fetcher.py         # IMAP client
+│   │   └── email_sender.py          # SMTP client
+│   ├── llm_ollama.py                # Ollama /api/generate wrapper
+│   ├── html_to_markdown.py          # generic HTML→Markdown conversion (no source-specific logic)
+│   └── utils.py                     # JSON I/O, date formatting
+├── scripts/                         # debug/development scripts
+├── deploy/                          # Dockerfile, docker-compose.yml, entrypoint.sh
+└── tests/                           # (planned)
 ```
 
 **Pipeline pattern** (same for every source):
 ```
-source (scrape/fetch) → html_to_markdown → llm_ollama → output (email)
+source (scrape/fetch) → html_to_markdown → source-specific md postprocessing → llm_ollama → output
 ```
 
-- **`sources/`** — each new source gets its own subpackage. Sources may import from `lib/` but never from other sources.
-- **`lib/`** — generic modules with no project-specific logic. Designed to be reusable across projects.
-- **`scripts/`** — standalone debug scripts that replace the former `__main__` blocks. Run from project root.
+- **`sources/`** — source-specific logic: scraping, authentication, Markdown postprocessing. Each source may import from `lib/` but never from other sources.
+- **`lib/`** — generic modules with no project-specific logic. Designed to be reusable across projects. Provider registry in `lib/email/providers.py` is the single source of truth for IMAP+SMTP config.
+- **`scripts/`** — standalone debug scripts. Run from project root.
 
 ## Key Design Decisions
 

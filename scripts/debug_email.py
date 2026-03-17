@@ -17,8 +17,9 @@ import os
 
 from dotenv import load_dotenv
 
-from sources.email.fetcher import fetch_emails, list_folders, get_unread_count
-from lib.html_to_markdown import html_to_markdown, email_md_remove_reply
+from lib.email.email_fetcher import fetch_emails, list_folders, get_unread_count
+from lib.html_to_markdown import html_to_markdown
+from sources.email.email_postprocessing import md_postprocess_remove_reply
 from lib.utils import save_json, load_json
 
 logging.basicConfig(
@@ -65,12 +66,12 @@ def fetch_emails_to_markdown(from_file=True):
                 e["text/html"], source_type="email", ignore_links=True, ignore_images=True,
             )
         else:
-            content = e.get("text/plain", "")
-            content_markdown = email_md_remove_reply(content)
+            content_markdown = e.get("text/plain", "")
+        content_markdown = md_postprocess_remove_reply(content_markdown)
         e["content_markdown"] = content_markdown
 
     save_json(emails, "temp/email/emails_md.json")
-    with open("temp/email/emails.txt", "w", encoding="utf-8") as f:
+    with open("temp/email/emails_md.txt", "w", encoding="utf-8") as f:
         for e in emails:
             f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
             f.write(e["content_markdown"])

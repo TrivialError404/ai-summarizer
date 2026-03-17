@@ -18,7 +18,7 @@ ENVIRONMENT VARIABLES (.env):
     IMAP_PASSWORD = your-app-password
 
 USAGE:
-    from email_fetcher import fetch_emails
+    from lib.email.email_fetcher import fetch_emails
 
     # Provider is auto-detected from the email address domain
     emails = fetch_emails(
@@ -46,100 +46,12 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+from lib.email.providers import PROVIDERS, detect_provider
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-
-# ──────────────────────────────────────────────
-# Provider registry
-# ──────────────────────────────────────────────
-
-IMAP_PROVIDERS: dict[str, dict] = {
-    "gmail": {
-        "host": "imap.gmail.com",
-        "port": 993,
-    },
-    "outlook": {
-        "host": "outlook.office365.com",
-        "port": 993,
-    },
-    "yahoo": {
-        "host": "imap.mail.yahoo.com",
-        "port": 993,
-    },
-    "icloud": {
-        "host": "imap.mail.me.com",
-        "port": 993,
-    },
-    "gmx": {
-        "host": "imap.gmx.com",
-        "port": 993,
-    },
-    "web.de": {
-        "host": "imap.web.de",
-        "port": 993,
-    },
-    "zoho": {
-        "host": "imap.zoho.com",
-        "port": 993,
-    },
-}
-
-
-# Maps email address domains to provider keys in IMAP_PROVIDERS.
-# Covers common domain aliases per provider.
-DOMAIN_TO_PROVIDER: dict[str, str] = {
-    # Gmail
-    "gmail.com":       "gmail",
-    "googlemail.com":  "gmail",
-    # Outlook / Microsoft
-    "outlook.com":     "outlook",
-    "hotmail.com":     "outlook",
-    "hotmail.de":      "outlook",
-    "hotmail.co.uk":   "outlook",
-    "live.com":        "outlook",
-    "live.de":         "outlook",
-    "msn.com":         "outlook",
-    # Yahoo
-    "yahoo.com":       "yahoo",
-    "yahoo.de":        "yahoo",
-    "yahoo.co.uk":     "yahoo",
-    "ymail.com":       "yahoo",
-    # iCloud / Apple
-    "icloud.com":      "icloud",
-    "me.com":          "icloud",
-    "mac.com":         "icloud",
-    # GMX
-    "gmx.com":         "gmx",
-    "gmx.de":          "gmx",
-    "gmx.net":         "gmx",
-    "gmx.at":          "gmx",
-    "gmx.ch":          "gmx",
-    # web.de
-    "web.de":          "web.de",
-    # Zoho
-    "zoho.com":        "zoho",
-    "zohomail.com":    "zoho",
-}
-
-
-def detect_provider(username: str) -> Optional[str]:
-    """
-    Attempts to detect the IMAP provider from the email address domain.
-
-    Args:
-        username: Email address (e.g. 'you@gmail.com').
-
-    Returns:
-        Provider key string (e.g. 'gmail') if the domain is recognised,
-        None otherwise.
-    """
-    if "@" not in username:
-        return None
-    domain = username.split("@")[-1].lower()
-    return DOMAIN_TO_PROVIDER.get(domain)
 
 
 def _resolve_host_port(
@@ -172,13 +84,13 @@ def _resolve_host_port(
     """
     if provider:
         key = provider.lower()
-        if key not in IMAP_PROVIDERS:
+        if key not in PROVIDERS:
             raise ValueError(
                 f"Unknown provider '{provider}'. "
-                f"Available: {list(IMAP_PROVIDERS.keys())}. "
+                f"Available: {list(PROVIDERS.keys())}. "
                 f"For custom servers pass imap_host= directly."
             )
-        entry = IMAP_PROVIDERS[key]
+        entry = PROVIDERS[key]["imap"]
         return entry["host"], entry["port"]
 
     if imap_host:
@@ -188,7 +100,7 @@ def _resolve_host_port(
         detected = detect_provider(username)
         if detected:
             logger.info(f"Auto-detected provider '{detected}' from {username!r}.")
-            entry = IMAP_PROVIDERS[detected]
+            entry = PROVIDERS[detected]["imap"]
             return entry["host"], entry["port"]
 
     raise ValueError(

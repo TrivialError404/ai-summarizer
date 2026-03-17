@@ -74,7 +74,7 @@ ARTICLE_SELECTORS = [
 session = None
 try:
     if HEISE_AUTH:
-        from sources.heise.auth import create_session
+        from sources.heise.heise_auth import create_session
         session = create_session() # Authentication to heise with account
         logger.info("Authentication to heise successful")
     else:
@@ -393,7 +393,7 @@ def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) 
 # ──────────────────────────────────────────────
 # Special Markdown reomoval
 # ──────────────────────────────────────────────
-def md_remove_noise(markdown: str) -> str:
+def md_postprocess_remove_section_noise(markdown: str) -> str:
     """
     Removes everything from the first occurrence of a known noise heading
     onwards.

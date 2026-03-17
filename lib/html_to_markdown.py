@@ -34,21 +34,17 @@ def _preprocess_email_html(html: str) -> str:
     """
     Cleans up email-specific HTML noise before Markdown conversion.
 
-    Removes or simplifies elements that produce garbage output when
-    converted naively: tracking pixels, spacer images, nested layout
-    tables, style/script blocks, and invisible elements.
+    Assumes _preprocess_web_html() has already run, so only handles
+    artefacts unique to email HTML: tracking pixels, empty layout
+    tables, and purely structural wrappers.
 
     Args:
-        html: Raw HTML string from an email body.
+        html: Raw HTML string from an email body (already web-preprocessed).
 
     Returns:
         Cleaned HTML string ready for Markdown conversion.
     """
     soup = BeautifulSoup(html, "html.parser")
-
-    # Remove non-content tags entirely
-    for tag in soup.find_all(["style", "script", "head", "meta", "noscript"]):
-        tag.decompose()
 
     # Remove tracking pixels and spacer images (1x1 or tiny images)
     for img in soup.find_all("img"):
@@ -69,12 +65,6 @@ def _preprocess_email_html(html: str) -> str:
     for table in soup.find_all("table"):
         if not table.get_text(strip=True):
             table.decompose()
-
-    # Remove elements explicitly hidden via inline style or HTML attributes
-    for tag in soup.find_all(style=re.compile(r"display\s*:\s*none", re.I)):
-        tag.decompose()
-    for tag in soup.find_all(attrs={"aria-hidden": "true"}):
-        tag.decompose()
 
     # Unwrap purely structural/presentational wrappers with no attributes
     for tag in soup.find_all(["span", "div", "center"]):
@@ -193,26 +183,6 @@ def _postprocess_markdown(md: str) -> str:
     return md.strip()
 
 
-def email_md_remove_reply(md: str) -> str:
-    """
-    Removes quoted reply blocks starting with "Von:" or "From:" followed
-    by an email address. Used only for email source type.
-
-    Args:
-        md: Markdown string.
-
-    Returns:
-        Markdown string with the reply block removed.
-    """
-    md = re.sub(
-        r"\n+(?:\*\*)?(?:Von|From):(?:\*\*)?.*?[\w.+-]+@[\w.-]+.*$[\s\S]*",
-        "",
-        md,
-        flags=re.MULTILINE,
-    )
-    return md
-
-
 # ──────────────────────────────────────────────
 # html2text configuration
 # ──────────────────────────────────────────────
@@ -269,7 +239,6 @@ def html_to_markdown(
         1. Preprocessing  – source-specific HTML cleanup (email or web).
         2. html2text      – convert HTML structure to Markdown syntax.
         3. Postprocessing – collapse blank lines, strip artifacts.
-        4. Reply removal  – strip quoted reply blocks (email only).
 
     Args:
         html:          Raw HTML string.
@@ -295,6 +264,7 @@ def html_to_markdown(
 
     if preprocess:
         if source_type == "email":
+            html = _preprocess_web_html(html)
             html = _preprocess_email_html(html)
         else:
             html = _preprocess_web_html(html)
@@ -306,8 +276,5 @@ def html_to_markdown(
     )
     raw_md = converter.handle(html)
     processed_md = _postprocess_markdown(raw_md)
-
-    if source_type == "email":
-        processed_md = email_md_remove_reply(processed_md)
 
     return processed_md
