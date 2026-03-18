@@ -78,7 +78,7 @@ _initialized_loggers: dict[str, logging.Logger] = {}
 def setup_logger(
     name: str = "app",
     log_file: Optional[str] = "app.log",
-    level: int = logging.DEBUG,
+    level: int = logging.INFO,
     clean: bool = True,
     capture_warnings: bool = True,
     own_modules_only: bool = True,
