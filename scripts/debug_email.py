@@ -1,7 +1,14 @@
 """
 Debug script for the email pipeline.
 
-Toggle individual functions by commenting/uncommenting in the __main__ block.
+Each step reads from the previous step's saved file and writes its output.
+Toggle steps by commenting/uncommenting in the __main__ block.
+
+Steps:
+    1. step1_fetch_raw()    – Fetch emails from IMAP        → emails_raw.json
+    2. step2_to_markdown()  – Convert to Markdown            → emails_md.json / .txt
+    3. step3_run_llm()      – LLM summarisation              → emails_llm.json / .txt
+    4. step4_send_email()   – Send summary via email
 
 Usage (from project root):
     python scripts/debug_email.py
@@ -18,9 +25,12 @@ import os
 from dotenv import load_dotenv
 
 from lib.email.email_fetcher import fetch_emails, list_folders, get_unread_count
+from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
+from lib.llm_ollama import query_ollama
+from lib.utils import save_json, load_json, timestamp_iso_8601_to_str
 from sources.email.email_postprocessing import md_postprocess_remove_reply
-from lib.utils import save_json, load_json
+from main import EMAIL_PROMPT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +40,7 @@ logging.basicConfig(
         logging.StreamHandler(),
     ],
 )
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 USER = os.environ.get("IMAP_USER")
@@ -46,19 +57,22 @@ def show_unread_count():
     print(get_unread_count(USER, PASSWORD))
 
 
-def fetch_emails_to_markdown(from_file=True):
-    """Fetch/load emails, convert to Markdown, save to temp/email/*"""
-    if from_file:
-        emails = load_json("temp/email/emails_raw.json")
-    else:
-        emails = fetch_emails(
-            username=USER,
-            password=PASSWORD,
-            folder="INBOX",
-            unread=True,
-            max_emails=50,
-        )
-        save_json(emails, "temp/email/emails_raw.json")
+def step1_fetch_raw():
+    """Fetch emails from IMAP and save to temp/email/emails_raw.json."""
+    emails = fetch_emails(
+        username=USER,
+        password=PASSWORD,
+        folder="INBOX",
+        unread=True,
+        max_emails=5,
+    )
+    save_json(emails, "temp/email/emails_raw.json")
+    logger.info(f"Fetched and saved {len(emails)} emails")
+
+
+def step2_to_markdown():
+    """Load raw emails, convert to Markdown, save to temp/email/emails_md.*"""
+    emails = load_json("temp/email/emails_raw.json")
 
     for e in emails:
         if e.get("text/html"):
@@ -76,9 +90,65 @@ def fetch_emails_to_markdown(from_file=True):
             f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
             f.write(e["content_markdown"])
             f.write("\n" + "-" * 80 + "\n\n")
+    logger.info(f"Converted {len(emails)} emails to Markdown")
+
+
+def step3_run_llm():
+    """Load Markdown emails, run LLM summaries, save to temp/email/emails_llm.*"""
+    emails = load_json("temp/email/emails_md.json")
+
+    results = []
+    for i, email in enumerate(emails, 1):
+        subject = email.get("Subject", "")
+        logger.info(f"[{i}/{len(emails)}] {email.get('uid')} | {subject}")
+
+        content_markdown = email.get("content_markdown", "")
+        if not content_markdown.strip():
+            logger.warning("  Skipping - no readable content.")
+            results.append({**email, "prompt": "", "llm_response": None})
+            continue
+
+        prompt = EMAIL_PROMPT.format(content_markdown=content_markdown)
+        llm_response = query_ollama(prompt, stream=True, collect_metrics=True)
+        logger.info(f"  → {llm_response['response']}")
+
+        results.append({
+            **email,
+            "prompt":       EMAIL_PROMPT.format(content_markdown="... [content_markdown] ..."),
+            "llm_response": llm_response,
+        })
+
+    save_json(results, "temp/email/emails_llm.json")
+    with open("temp/email/emails_llm.txt", "w", encoding="utf-8") as f:
+        for e in results:
+            response = e["llm_response"]["response"] if e.get("llm_response") else "(no response)"
+            f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
+            f.write(response)
+            f.write("\n" + "-" * 80 + "\n\n")
+    logger.info(f"LLM processing done for {len(results)} emails")
+
+
+def step4_send_email():
+    """Load LLM results and send summary email."""
+    results = load_json("temp/email/emails_llm.json")
+
+    summary_string = ""
+    for email in results:
+        if not email.get("llm_response"):
+            continue
+        summary_string += f"{timestamp_iso_8601_to_str(email['Date'])} | {email['From']} | {email['Subject']}\n"
+        summary_string += email["llm_response"]["response"]
+        summary_string += "\n" + "-" * 80 + "\n\n"
+
+    send_email_to_self(subject="Summary Email", body=summary_string)
+    logger.info("Summary email sent")
 
 
 if __name__ == "__main__":
     # show_folders()
     # show_unread_count()
-    fetch_emails_to_markdown(from_file=True)
+    # step1_fetch_raw()
+    # step2_to_markdown()
+    # step3_run_llm()
+    # step4_send_email()
+    pass
