@@ -50,7 +50,6 @@ from lib.email.providers import PROVIDERS, detect_provider
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 

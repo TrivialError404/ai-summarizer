@@ -23,7 +23,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 DEFAULT_HOST  = os.environ.get("OLLAMA_HOST",  "http://localhost:11434")

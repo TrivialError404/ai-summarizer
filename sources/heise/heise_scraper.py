@@ -66,6 +66,7 @@ DEFAULT_HEADERS = {
 ARTICLE_SELECTORS = [
     ".article-content",
     ".article-layout__content",
+    #"[class*='_StoryContent']",
 ]
 
 # Lazy session cache – None means not yet authenticated
