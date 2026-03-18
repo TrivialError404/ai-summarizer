@@ -14,6 +14,7 @@ lives there.
 import logging
 from pathlib import Path
 
+from setup_logging import setup_logger
 from lib.email.email_fetcher import get_emails_default
 from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
@@ -27,7 +28,6 @@ from datetime import datetime
 import locale
 locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
@@ -187,6 +187,7 @@ def summarise_heise_articles() -> list[dict]:
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
+    setup_logger()
 
     # Summarize emails
     summarise_emails()

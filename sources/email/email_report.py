@@ -44,12 +44,7 @@ def build_summary_body_md(results: list[dict]) -> str:
         response = email["llm_response"]["response"]
         response = re.sub(r"\n+", " ", response).strip()
 
-        # Gmail deep-link: opens the original email directly in Gmail
-        message_id = email.get("Message-ID", "").strip("<>")
-        if message_id:
-            subject_line = f"### [{subject}](https://mail.google.com/mail/#search/rfc822msgid:{message_id})"
-        else:
-            subject_line = f"### {subject}"
+        subject_line = f"### {subject}"
 
         lines += [
             subject_line,

@@ -454,7 +454,7 @@ def fetch_emails(
                     continue
                 entry = _parse_message(msg_id.decode("utf-8"), msg_data[0][1])
                 results.append(entry)
-                logger.info(f"  ✓ [{entry['uid']}] {entry['Subject'][:70]!r}")
+                logger.info(f"  [ok] [{entry['uid']}] {entry['Subject'][:70]!r}")
             except Exception as exc:
                 logger.error(f"Error processing email {msg_id}: {exc}")
 

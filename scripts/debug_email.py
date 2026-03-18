@@ -22,6 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import logging
 import os
 
+from setup_logging import setup_logger
+
+logger = logging.getLogger(__name__)
+
 from dotenv import load_dotenv
 
 from lib.email.email_fetcher import fetch_emails, list_folders, get_unread_count
@@ -32,16 +36,6 @@ from lib.utils import save_json, load_json
 from sources.email.email_postprocessing import md_postprocess_remove_reply
 from sources.email.email_report import build_summary_body_md
 from main import EMAIL_PROMPT
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.FileHandler("debug.log"),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
 
 load_dotenv()
 USER = os.environ.get("IMAP_USER")
@@ -63,9 +57,9 @@ def step1_fetch_raw():
     emails = fetch_emails(
         username=USER,
         password=PASSWORD,
-        folder="INBOX",
-        unread=True,
-        max_emails=5,
+        folder="Test",     # INBOX
+        unread=False,       # True
+        max_emails=None,   # 5
     )
     save_json(emails, "temp/email/emails_raw.json")
     logger.info(f"Fetched and saved {len(emails)} emails")
@@ -143,10 +137,13 @@ def step4_send_email():
 
 
 if __name__ == "__main__":
+    setup_logger(name="debug", log_file="debug.log")
+
     #show_folders()
     #show_unread_count()
-    #step1_fetch_raw()
-    #step2_to_markdown()
-    #step3_run_llm()
+
+    step1_fetch_raw()
+    step2_to_markdown()
+    step3_run_llm()
     step4_send_email()
     pass

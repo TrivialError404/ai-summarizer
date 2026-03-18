@@ -25,6 +25,7 @@ import locale
 import logging
 from datetime import datetime
 
+from setup_logging import setup_logger
 from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
 from lib.llm_ollama import query_ollama
@@ -39,14 +40,6 @@ from main import HEISE_PROMPT
 
 locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.FileHandler("debug.log"),
-        logging.StreamHandler(),
-    ],
-)
 logger = logging.getLogger(__name__)
 
 
@@ -64,7 +57,8 @@ def step1_fetch_links():
 
 def step1_fetch_raw():
     """Scrape articles from heise.de and save to temp/heise/articles_raw.json."""
-    articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
+    #articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
+    articles = scrape_articles_by_filter(max_articles=None, days_back=1, exact_day=True)
     save_json(articles, "temp/heise/articles_raw.json")
     logger.info(f"Fetched and saved {len(articles)} articles")
 
@@ -139,9 +133,11 @@ def step4_send_email():
 
 
 if __name__ == "__main__":
-    #step1_fetch_links()
-    #step1_fetch_raw()
-    #step2_to_markdown()
-    #step3_run_llm()
+    setup_logger(name="debug", log_file="debug.log", own_modules_only=True)
+
+    step1_fetch_links()
+    step1_fetch_raw()
+    step2_to_markdown()
+    step3_run_llm()
     step4_send_email()
     pass
