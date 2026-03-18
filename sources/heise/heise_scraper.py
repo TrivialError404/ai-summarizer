@@ -48,8 +48,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # ──────────────────────────────────────────────
 
-HEISE_AUTH = True
-
 HEISE_ARCHIVE_URL = "https://www.heise.de/newsticker/archiv/"
 HEISE_BASE_URL    = "https://www.heise.de"
 
@@ -68,19 +66,33 @@ DEFAULT_HEADERS = {
 ARTICLE_SELECTORS = [
     ".article-content",
     ".article-layout__content",
+    #"[class*='_StoryContent']",
 ]
 
-# heise.de login
-session = None
-try:
-    if HEISE_AUTH:
-        from heise_auth import create_session
-        session = create_session() # Authentication to heise with account
+# Lazy session cache – None means not yet authenticated
+_session = None
+
+
+def get_heise_session():
+    """
+    Returns an authenticated requests.Session for heise.de.
+
+    The session is created on the first call and reused for all subsequent
+    calls (lazy singleton). Safe to call multiple times – authentication
+    happens exactly once.
+
+    Returns:
+        An authenticated requests.Session.
+
+    Raises:
+        Exception: If authentication fails.
+    """
+    global _session
+    if _session is None:
+        from sources.heise.heise_auth import create_session
+        _session = create_session()
         logger.info("Authentication to heise successful")
-    else:
-        logger.info("Skip Authentication to heise")
-except Exception as e:
-    logger.warning(f"FAILED Authentication to heise: {e}")
+    return _session
 
 
 # ──────────────────────────────────────────────
@@ -220,7 +232,7 @@ def fetch_article_links_archive(
         requests.Timeout:   If the request times out.
     """
     logger.info(f"Fetching article links from archive page: {HEISE_ARCHIVE_URL}")
-    requester = session or requests
+    requester = requests
     response = requester.get(HEISE_ARCHIVE_URL, headers=DEFAULT_HEADERS, timeout=15)
     response.raise_for_status()
     time.sleep(request_delay)
@@ -374,7 +386,7 @@ def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) 
         requests.Timeout:   If the request times out.
     """
     logger.info(f"Fetching article: {url}")
-    requester = session or requests
+    requester = get_heise_session()
     response = requester.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
     response.raise_for_status()
     time.sleep(request_delay)
@@ -393,7 +405,7 @@ def fetch_article_html(url: str, request_delay: float = 1.0, timeout: int = 15) 
 # ──────────────────────────────────────────────
 # Special Markdown reomoval
 # ──────────────────────────────────────────────
-def md_remove_noise(markdown: str) -> str:
+def md_postprocess_remove_section_noise(markdown: str) -> str:
     """
     Removes everything from the first occurrence of a known noise heading
     onwards.
@@ -514,64 +526,4 @@ def scrape_articles_by_filter(
     return result
  
  
-# ──────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────
  
-if __name__ == "__main__":
-    import locale
-    from html_to_markdown import html_to_markdown
-    from utils import save_json, load_json
-
-    # German weekday names
-    locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler("debug.log"),
-            logging.StreamHandler()
-        ],
-    )
-    
-    from_file = True
-
-    # fetch all article links only
-    if False:
-        logger.info("Fetch all links from heise.de RSS feed")
-        articles = fetch_article_links()
-        # Save to json
-        save_json(articles, "temp/heise/links.json")
-        # Save to txt
-        with open("temp/heise/links.txt", "w", encoding="utf-8") as f:
-            for a in articles:
-                dt = datetime.fromisoformat(a["published"])
-                f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
- 
-    # fetch n latest articles and convert to markdown
-    if True:
-        logger.info("Fetch the latest n articles and process the html to markdown")
-        
-        if from_file:
-            articles = load_json("temp/heise/articles_raw.json")
-        else:
-            articles = scrape_articles_by_filter(max_articles=5, days_back=0, exact_day=False)
-            save_json(articles, "temp/heise/articles_raw.json")
-
-        # Markdown
-        for article in articles:
-            # HTML to Markdown
-            content_markdown = html_to_markdown(article["content_html"], source_type="web")
-            content_markdown = md_remove_noise(content_markdown)
-            article["content_markdown"] = content_markdown
-
-        # Save to json
-        save_json(articles, "temp/heise/articles_md.json")
-        # Save to txt
-        with open("temp/heise/articles_md.txt", "w", encoding="utf-8") as f:
-            for a in articles:
-                dt = datetime.fromisoformat(a["published"])
-                f.write(f"{dt.strftime("%A %d.%m.%Y %H:%M")} | {a['title']} | {a['url']}\n")
-                f.write(a["content_markdown"])
-                f.write("\n" + "-"*80 + "\n\n")

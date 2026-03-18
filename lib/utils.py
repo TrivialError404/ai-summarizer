@@ -38,7 +38,3 @@ def load_json(path: Path) -> list[dict]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
-def timestamp_iso_8601_to_str(timestamp):
-    dt = datetime.fromisoformat(timestamp)
-    return dt.strftime("%A %d.%m.%Y %H:%M")

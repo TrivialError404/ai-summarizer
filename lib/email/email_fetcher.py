@@ -18,7 +18,7 @@ ENVIRONMENT VARIABLES (.env):
     IMAP_PASSWORD = your-app-password
 
 USAGE:
-    from email_fetcher import fetch_emails
+    from lib.email.email_fetcher import fetch_emails
 
     # Provider is auto-detected from the email address domain
     emails = fetch_emails(
@@ -46,100 +46,11 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+from lib.email.providers import PROVIDERS, detect_provider
+
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-
-# ──────────────────────────────────────────────
-# Provider registry
-# ──────────────────────────────────────────────
-
-IMAP_PROVIDERS: dict[str, dict] = {
-    "gmail": {
-        "host": "imap.gmail.com",
-        "port": 993,
-    },
-    "outlook": {
-        "host": "outlook.office365.com",
-        "port": 993,
-    },
-    "yahoo": {
-        "host": "imap.mail.yahoo.com",
-        "port": 993,
-    },
-    "icloud": {
-        "host": "imap.mail.me.com",
-        "port": 993,
-    },
-    "gmx": {
-        "host": "imap.gmx.com",
-        "port": 993,
-    },
-    "web.de": {
-        "host": "imap.web.de",
-        "port": 993,
-    },
-    "zoho": {
-        "host": "imap.zoho.com",
-        "port": 993,
-    },
-}
-
-
-# Maps email address domains to provider keys in IMAP_PROVIDERS.
-# Covers common domain aliases per provider.
-DOMAIN_TO_PROVIDER: dict[str, str] = {
-    # Gmail
-    "gmail.com":       "gmail",
-    "googlemail.com":  "gmail",
-    # Outlook / Microsoft
-    "outlook.com":     "outlook",
-    "hotmail.com":     "outlook",
-    "hotmail.de":      "outlook",
-    "hotmail.co.uk":   "outlook",
-    "live.com":        "outlook",
-    "live.de":         "outlook",
-    "msn.com":         "outlook",
-    # Yahoo
-    "yahoo.com":       "yahoo",
-    "yahoo.de":        "yahoo",
-    "yahoo.co.uk":     "yahoo",
-    "ymail.com":       "yahoo",
-    # iCloud / Apple
-    "icloud.com":      "icloud",
-    "me.com":          "icloud",
-    "mac.com":         "icloud",
-    # GMX
-    "gmx.com":         "gmx",
-    "gmx.de":          "gmx",
-    "gmx.net":         "gmx",
-    "gmx.at":          "gmx",
-    "gmx.ch":          "gmx",
-    # web.de
-    "web.de":          "web.de",
-    # Zoho
-    "zoho.com":        "zoho",
-    "zohomail.com":    "zoho",
-}
-
-
-def detect_provider(username: str) -> Optional[str]:
-    """
-    Attempts to detect the IMAP provider from the email address domain.
-
-    Args:
-        username: Email address (e.g. 'you@gmail.com').
-
-    Returns:
-        Provider key string (e.g. 'gmail') if the domain is recognised,
-        None otherwise.
-    """
-    if "@" not in username:
-        return None
-    domain = username.split("@")[-1].lower()
-    return DOMAIN_TO_PROVIDER.get(domain)
 
 
 def _resolve_host_port(
@@ -172,13 +83,13 @@ def _resolve_host_port(
     """
     if provider:
         key = provider.lower()
-        if key not in IMAP_PROVIDERS:
+        if key not in PROVIDERS:
             raise ValueError(
                 f"Unknown provider '{provider}'. "
-                f"Available: {list(IMAP_PROVIDERS.keys())}. "
+                f"Available: {list(PROVIDERS.keys())}. "
                 f"For custom servers pass imap_host= directly."
             )
-        entry = IMAP_PROVIDERS[key]
+        entry = PROVIDERS[key]["imap"]
         return entry["host"], entry["port"]
 
     if imap_host:
@@ -188,7 +99,7 @@ def _resolve_host_port(
         detected = detect_provider(username)
         if detected:
             logger.info(f"Auto-detected provider '{detected}' from {username!r}.")
-            entry = IMAP_PROVIDERS[detected]
+            entry = PROVIDERS[detected]["imap"]
             return entry["host"], entry["port"]
 
     raise ValueError(
@@ -542,7 +453,7 @@ def fetch_emails(
                     continue
                 entry = _parse_message(msg_id.decode("utf-8"), msg_data[0][1])
                 results.append(entry)
-                logger.info(f"  ✓ [{entry['uid']}] {entry['Subject'][:70]!r}")
+                logger.info(f"  [ok] [{entry['uid']}] {entry['Subject'][:70]!r}")
             except Exception as exc:
                 logger.error(f"Error processing email {msg_id}: {exc}")
 
@@ -591,52 +502,3 @@ def get_emails_default(folder: str = "INBOX", unread: bool = True, max_emails: O
     return emails
 
 
-if __name__ == "__main__":
-    from utils import save_json, load_json
-    from html_to_markdown import html_to_markdown, email_md_remove_reply
-
-    load_dotenv()
-    USER     = os.environ.get("IMAP_USER")      # username: you@gmail.com
-    PASSWORD = os.environ.get("IMAP_PASSWORD")  # password: App Password (not Account Password)
-
-    from_file = True
-
-    if False:
-        # List available folders for your provider:
-        print(list_folders(USER, PASSWORD, provider="gmail"))
-
-        # Check unread count:
-        print(get_unread_count(USER, PASSWORD, provider="gmail"))
-
-    if True:
-        if from_file:
-            emails = load_json("temp/email/emails_raw.json")
-        else:
-            emails = fetch_emails(
-                username=USER,
-                password=PASSWORD,
-                folder="INBOX",
-                unread=True,
-                max_emails=50,
-            )
-            # Save to json
-            save_json(emails, "temp/email/emails_raw.json")
-
-        # Markdown
-        for e in emails:
-            if e.get("text/html"):
-                content_markdown = html_to_markdown(e["text/html"], source_type="email", ignore_links=True, ignore_images=True)
-            else:
-                content = e.get("text/plain", "")
-                content_markdown = email_md_remove_reply(content)
-            e["content_markdown"] = content_markdown
-            
-
-        # Save to json
-        save_json(emails, "temp/email/emails_md.json")
-        # Save to txt
-        with open("temp/email/emails.txt", "w", encoding="utf-8") as f:
-            for e in emails:
-                f.write(f"{e['From']} | {e['Subject']} | {e['Date']}\n")
-                f.write(e["content_markdown"])
-                f.write("\n" + "-"*80 + "\n\n")
