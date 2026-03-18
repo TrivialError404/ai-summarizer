@@ -12,11 +12,13 @@ lives there.
 
 
 import logging
+from pathlib import Path
 
 from lib.email.email_fetcher import get_emails_default
 from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
 from lib.llm_ollama import query_ollama
+from lib.utils import save_json
 from sources.email.email_postprocessing import md_postprocess_remove_reply
 from sources.email.email_report import build_summary_body_md as build_email_body_md
 from sources.heise.heise_scraper import scrape_articles_by_filter, md_postprocess_remove_section_noise
@@ -105,8 +107,15 @@ def summarise_emails() -> list[dict]:
             "llm_response":     llm_response,
         })
 
-    # Send mail
-    send_email_to_self(subject="E-Mail Zusammenfassung", body_md=build_email_body_md(results))
+    # Send email
+    debug = False
+    result_path = Path("temp/email/result.json")
+    save_json(results, str(result_path))
+    send_email_to_self(
+        subject="E-Mail Zusammenfassung",
+        body_md=build_email_body_md(results),
+        attachments=[result_path] if debug else None,
+    )
 
     return results
 
@@ -160,8 +169,15 @@ def summarise_heise_articles() -> list[dict]:
             "llm_response":     llm_response,
         })
 
-    # Send mail
-    send_email_to_self(subject="heise.de \u2013 Zusammenfassung", body_md=build_heise_body_md(results))
+    # Send email
+    debug = False
+    result_path = Path("temp/heise/result.json")
+    save_json(results, str(result_path))
+    send_email_to_self(
+        subject="heise.de \u2013 Zusammenfassung",
+        body_md=build_heise_body_md(results),
+        attachments=[result_path] if debug else None,
+    )
 
     return results
 

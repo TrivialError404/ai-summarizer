@@ -132,9 +132,13 @@ def step3_run_llm():
 def step4_send_email():
     """Load LLM results and send summary email."""
     results = load_json("temp/email/emails_llm.json")
-    body_md = build_summary_body_md(results)
-    save_json(results, "temp/email/emails_summary.json")
-    send_email_to_self(subject="E-Mail Zusammenfassung", body_md=body_md)
+    result_path = Path("temp/email/result.json")
+    save_json(results, str(result_path))
+    send_email_to_self(
+        subject="E-Mail Zusammenfassung",
+        body_md=build_summary_body_md(results),
+        attachments=[result_path],
+    )
     logger.info("Summary email sent")
 
 
