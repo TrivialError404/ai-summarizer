@@ -28,8 +28,9 @@ from lib.email.email_fetcher import fetch_emails, list_folders, get_unread_count
 from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
 from lib.llm_ollama import query_ollama
-from lib.utils import save_json, load_json, timestamp_iso_8601_to_str
+from lib.utils import save_json, load_json
 from sources.email.email_postprocessing import md_postprocess_remove_reply
+from sources.email.email_report import build_summary_body_md
 from main import EMAIL_PROMPT
 
 logging.basicConfig(
@@ -131,24 +132,17 @@ def step3_run_llm():
 def step4_send_email():
     """Load LLM results and send summary email."""
     results = load_json("temp/email/emails_llm.json")
-
-    summary_string = ""
-    for email in results:
-        if not email.get("llm_response"):
-            continue
-        summary_string += f"{timestamp_iso_8601_to_str(email['Date'])} | {email['From']} | {email['Subject']}\n"
-        summary_string += email["llm_response"]["response"]
-        summary_string += "\n" + "-" * 80 + "\n\n"
-
-    send_email_to_self(subject="Summary Email", body=summary_string)
+    body_md = build_summary_body_md(results)
+    save_json(results, "temp/email/emails_summary.json")
+    send_email_to_self(subject="E-Mail Zusammenfassung", body_md=body_md)
     logger.info("Summary email sent")
 
 
 if __name__ == "__main__":
-    # show_folders()
-    # show_unread_count()
-    # step1_fetch_raw()
-    # step2_to_markdown()
-    # step3_run_llm()
-    # step4_send_email()
+    #show_folders()
+    #show_unread_count()
+    #step1_fetch_raw()
+    #step2_to_markdown()
+    #step3_run_llm()
+    step4_send_email()
     pass

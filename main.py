@@ -17,9 +17,10 @@ from lib.email.email_fetcher import get_emails_default
 from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
 from lib.llm_ollama import query_ollama
-from lib.utils import timestamp_iso_8601_to_str
 from sources.email.email_postprocessing import md_postprocess_remove_reply
+from sources.email.email_report import build_summary_body_md as build_email_body_md
 from sources.heise.heise_scraper import scrape_articles_by_filter, md_postprocess_remove_section_noise
+from sources.heise.heise_report import build_summary_body_md as build_heise_body_md
 from datetime import datetime
 import locale
 locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
@@ -104,15 +105,8 @@ def summarise_emails() -> list[dict]:
             "llm_response":     llm_response,
         })
 
-    # Summarize all mails and send summary by mail
-    summary_string = ""
-    for email in results:
-        if not email.get("llm_response"):
-            continue
-        summary_string += f"{timestamp_iso_8601_to_str(email['Date'])} | {email['From']} | {email['Subject']}\n"
-        summary_string += email["llm_response"]["response"]
-        summary_string += "\n" + "-"*80 + "\n\n"
-    send_email_to_self(subject="Summary Email", body=summary_string)
+    # Send mail
+    send_email_to_self(subject="E-Mail Zusammenfassung", body_md=build_email_body_md(results))
 
     return results
 
@@ -166,15 +160,8 @@ def summarise_heise_articles() -> list[dict]:
             "llm_response":     llm_response,
         })
 
-    # Summarize all articles and send summary by mail
-    summary_string = ""
-    for article in results:
-        if not article.get("llm_response"):
-            continue
-        summary_string += f"{timestamp_iso_8601_to_str(article['published'])} | {article['title']} | {article['url']}\n"
-        summary_string += article["llm_response"]["response"]
-        summary_string += "\n" + "-"*80 + "\n\n"
-    send_email_to_self(subject="Summary heise.de", body=summary_string)
+    # Send mail
+    send_email_to_self(subject="heise.de \u2013 Zusammenfassung", body_md=build_heise_body_md(results))
 
     return results
 

@@ -28,7 +28,8 @@ from datetime import datetime
 from lib.email.email_sender import send_email_to_self
 from lib.html_to_markdown import html_to_markdown
 from lib.llm_ollama import query_ollama
-from lib.utils import save_json, load_json, timestamp_iso_8601_to_str
+from lib.utils import save_json, load_json
+from sources.heise.heise_report import build_summary_body_md
 from sources.heise.heise_scraper import (
     fetch_article_links,
     scrape_articles_by_filter,
@@ -127,23 +128,16 @@ def step3_run_llm():
 def step4_send_email():
     """Load LLM results and send summary email."""
     results = load_json("temp/heise/articles_llm.json")
-
-    summary_string = ""
-    for article in results:
-        if not article.get("llm_response"):
-            continue
-        summary_string += f"{timestamp_iso_8601_to_str(article['published'])} | {article['title']} | {article['url']}\n"
-        summary_string += article["llm_response"]["response"]
-        summary_string += "\n" + "-" * 80 + "\n\n"
-
-    send_email_to_self(subject="Summary heise.de", body=summary_string)
+    body_md = build_summary_body_md(results)
+    save_json(results, "temp/heise/articles_summary.json")
+    send_email_to_self(subject="heise.de \u2013 Zusammenfassung", body_md=body_md)
     logger.info("Summary email sent")
 
 
 if __name__ == "__main__":
-    # step1_fetch_links()
-    # step1_fetch_raw()
-    # step2_to_markdown()
-    # step3_run_llm()
-    # step4_send_email()
+    #step1_fetch_links()
+    #step1_fetch_raw()
+    #step2_to_markdown()
+    #step3_run_llm()
+    step4_send_email()
     pass
